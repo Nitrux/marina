@@ -54,7 +54,7 @@ checkinstall -D -y \
 	--pakdir=. \
 	--maintainer=uri_herrera@nxos.org \
 	--provides=marina \
-	--requires="hyprland,layer-shell-qt,,libqt6svg6,mauikit \(\>= 4.0.4\)" \
+	--requires="hyprland,layer-shell-qt,libqt6svg6,mauikit \(\>= 4.0.4\)" \
 	--nodoc \
 	--strip=no \
 	--stripso=yes \
