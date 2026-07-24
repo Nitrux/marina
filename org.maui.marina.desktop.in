@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Marina
+Comment=Workspace dock for Nitrux
+Exec=marina
+TryExec=marina
+Icon=user-desktop
+Terminal=false
+Type=Application
+Categories=Qt;Utility;
+StartupNotify=false
+X-KDE-Wayland-VirtualKeyboard=false
