@@ -72,10 +72,11 @@ showAboveFullscreen=false
 width=0
 ```
 
-`screenPlacement` accepts `all` or `active`. Restart Marina after editing the
-configuration file. With `showAboveFullscreen=false`, Marina unmaps while the
-focused client is fullscreen. Setting it to `true` selects the LayerShell
-overlay layer and keeps the dock available above fullscreen clients.
+`screenPlacement` accepts `all` or `active`. Marina watches the configuration
+file and applies saved changes while it is running. With
+`showAboveFullscreen=false`, Marina unmaps while the focused client is
+fullscreen. Setting it to `true` selects the LayerShell overlay layer and keeps
+the dock available above fullscreen clients.
 
 `height=0` derives the dock height from `iconSize`; a positive value requests
 an explicit height and is clamped between `iconSize + 8` and 256 pixels.

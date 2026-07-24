@@ -273,6 +273,44 @@ void DockModel::launchNew(int row)
         emit launchFailed(entry.name);
 }
 
+void DockModel::closeWindows(int row)
+{
+    if (row < 0 || row >= m_entries.size())
+        return;
+
+    const QList<DockEntry::Window> windows = m_entries.at(row).windows;
+    static const QRegularExpression addressPattern(
+        QStringLiteral("^0x[0-9a-fA-F]+$"));
+    for (const DockEntry::Window &window : windows)
+    {
+        const QString address = window.address.trimmed();
+        if (!addressPattern.match(address).hasMatch())
+            continue;
+
+        auto *closeProcess = new QProcess(this);
+        closeProcess->setProgram(QStringLiteral("hyprctl"));
+        closeProcess->setArguments(
+            {QStringLiteral("dispatch"),
+             QStringLiteral("hl.window.close({ window = 'address:%1' })")
+                 .arg(address)});
+        closeProcess->setProcessChannelMode(QProcess::SeparateChannels);
+        connect(closeProcess,
+                qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+                closeProcess,
+                &QObject::deleteLater);
+        connect(closeProcess,
+                &QProcess::errorOccurred,
+                closeProcess,
+                [closeProcess](QProcess::ProcessError) {
+                    if (closeProcess->state() == QProcess::NotRunning)
+                        closeProcess->deleteLater();
+                });
+        closeProcess->start(QIODevice::ReadOnly);
+    }
+
+    QTimer::singleShot(300, this, &DockModel::refresh);
+}
+
 void DockModel::togglePinned(int row)
 {
     if (row < 0 || row >= m_entries.size())
@@ -384,10 +422,10 @@ void DockModel::refresh()
     m_activeWindowProcess.start(QIODevice::ReadOnly);
 
     m_clientsProcess.setProgram(QStringLiteral("hyprctl"));
-    // Hyprland may unmap clients on inactive workspaces. Keep them in the
-    // global task list instead of silently reducing Marina to this workspace.
+    // Do not request unmapped clients: during window teardown Hyprland can retain
+    // a client entry after its Wayland surface has already been destroyed.
     m_clientsProcess.setArguments(
-        {QStringLiteral("-j"), QStringLiteral("-a"), QStringLiteral("clients")});
+        {QStringLiteral("-j"), QStringLiteral("clients")});
     m_clientsProcess.start(QIODevice::ReadOnly);
 }
 
@@ -425,32 +463,123 @@ void DockModel::initializeSettings()
     if (!settings.contains(QStringLiteral("Behavior/autoHideDelay")))
         settings.setValue(QStringLiteral("Behavior/autoHideDelay"), 650);
     settings.remove(QStringLiteral("Behavior/currentWorkspaceOnly"));
-
-    m_iconSize = qBound(32, settings.value(QStringLiteral("Appearance/iconSize")).toInt(), 96);
-    m_edgeMargin = qBound(0, settings.value(QStringLiteral("Appearance/edgeMargin")).toInt(), 48);
-    const int requestedWidth = settings.value(QStringLiteral("Window/width")).toInt();
-    const int requestedHeight = settings.value(QStringLiteral("Window/height")).toInt();
-    m_dockWidth = requestedWidth <= 0 ? 0 : qBound(96, requestedWidth, 4096);
-    m_dockHeight = requestedHeight <= 0
-        ? m_iconSize + 24
-        : qBound(m_iconSize + 8, requestedHeight, 256);
-    m_screenPlacement = settings.value(QStringLiteral("Window/screenPlacement"))
-                            .toString().trimmed().toLower();
-    if (m_screenPlacement != QLatin1String("active")
-        && m_screenPlacement != QLatin1String("all"))
-    {
-        m_screenPlacement = QStringLiteral("all");
-        settings.setValue(QStringLiteral("Window/screenPlacement"), m_screenPlacement);
-    }
-
-    m_showAboveFullscreen =
-        settings.value(QStringLiteral("Window/showAboveFullscreen")).toBool();
-    m_autoHide = settings.value(QStringLiteral("Behavior/autoHide")).toBool();
-    m_autoHideDelay = qBound(
-        0, settings.value(QStringLiteral("Behavior/autoHideDelay")).toInt(), 5000);
-    m_pinnedIds = settings.value(QStringLiteral("Launchers/pinned")).toStringList();
-    m_pinnedIds.removeDuplicates();
     settings.sync();
+
+    m_settingsReloadTimer.setSingleShot(true);
+    m_settingsReloadTimer.setInterval(100);
+    connect(&m_settingsReloadTimer,
+            &QTimer::timeout,
+            this,
+            &DockModel::reloadSettings);
+    connect(&m_settingsWatcher,
+            &QFileSystemWatcher::fileChanged,
+            this,
+            &DockModel::scheduleSettingsReload);
+    connect(&m_settingsWatcher,
+            &QFileSystemWatcher::directoryChanged,
+            this,
+            &DockModel::scheduleSettingsReload);
+
+    const QString configDirectoryPath = QFileInfo(m_configFile).absolutePath();
+    m_settingsWatcher.addPath(configDirectoryPath);
+    m_settingsWatcher.addPath(m_configFile);
+    reloadSettings();
+}
+
+void DockModel::scheduleSettingsReload()
+{
+    m_settingsReloadTimer.start();
+}
+
+void DockModel::reloadSettings()
+{
+    if (!QFileInfo::exists(m_configFile))
+        return;
+
+    if (!m_settingsWatcher.files().contains(m_configFile))
+        m_settingsWatcher.addPath(m_configFile);
+
+    QSettings settings(m_configFile, QSettings::IniFormat);
+    const int iconSize = qBound(
+        32, settings.value(QStringLiteral("Appearance/iconSize"), 48).toInt(), 96);
+    const int edgeMargin = qBound(
+        0, settings.value(QStringLiteral("Appearance/edgeMargin"), 8).toInt(), 48);
+    const int requestedWidth =
+        settings.value(QStringLiteral("Window/width"), 0).toInt();
+    const int requestedHeight =
+        settings.value(QStringLiteral("Window/height"), 0).toInt();
+    const int dockWidth = requestedWidth <= 0
+        ? 0
+        : qBound(96, requestedWidth, 4096);
+    const int dockHeight = requestedHeight <= 0
+        ? iconSize + 24
+        : qBound(iconSize + 8, requestedHeight, 256);
+    QString screenPlacement =
+        settings.value(QStringLiteral("Window/screenPlacement"),
+                       QStringLiteral("all"))
+            .toString().trimmed().toLower();
+    if (screenPlacement != QLatin1String("active")
+        && screenPlacement != QLatin1String("all"))
+    {
+        screenPlacement = QStringLiteral("all");
+    }
+    const bool showAboveFullscreen =
+        settings.value(QStringLiteral("Window/showAboveFullscreen"), false).toBool();
+    const bool autoHide =
+        settings.value(QStringLiteral("Behavior/autoHide"), false).toBool();
+    const int autoHideDelay = qBound(
+        0,
+        settings.value(QStringLiteral("Behavior/autoHideDelay"), 650).toInt(),
+        5000);
+    QStringList pinnedIds =
+        settings.value(QStringLiteral("Launchers/pinned")).toStringList();
+    pinnedIds.removeDuplicates();
+
+    if (m_iconSize != iconSize)
+    {
+        m_iconSize = iconSize;
+        emit iconSizeChanged();
+    }
+    if (m_edgeMargin != edgeMargin)
+    {
+        m_edgeMargin = edgeMargin;
+        emit edgeMarginChanged();
+    }
+    if (m_dockWidth != dockWidth)
+    {
+        m_dockWidth = dockWidth;
+        emit dockWidthChanged();
+    }
+    if (m_dockHeight != dockHeight)
+    {
+        m_dockHeight = dockHeight;
+        emit dockHeightChanged();
+    }
+    if (m_screenPlacement != screenPlacement)
+    {
+        m_screenPlacement = screenPlacement;
+        emit screenPlacementChanged();
+    }
+    if (m_showAboveFullscreen != showAboveFullscreen)
+    {
+        m_showAboveFullscreen = showAboveFullscreen;
+        emit showAboveFullscreenChanged();
+    }
+    if (m_autoHide != autoHide)
+    {
+        m_autoHide = autoHide;
+        emit autoHideChanged();
+    }
+    if (m_autoHideDelay != autoHideDelay)
+    {
+        m_autoHideDelay = autoHideDelay;
+        emit autoHideDelayChanged();
+    }
+    if (m_pinnedIds != pinnedIds)
+    {
+        m_pinnedIds = pinnedIds;
+        rebuild(m_lastClients);
+    }
 }
 
 void DockModel::savePinnedIds()
@@ -530,6 +659,25 @@ void DockModel::handleEventLine(const QByteArray &line)
     };
 
     const QByteArray eventName = line.left(separatorIndex).trimmed();
+    if (eventName == QByteArrayLiteral("closewindow"))
+    {
+        QString closedAddress =
+            QString::fromUtf8(line.mid(separatorIndex + 2)).trimmed();
+        if (!closedAddress.isEmpty())
+        {
+            if (!closedAddress.startsWith(QStringLiteral("0x"),
+                                          Qt::CaseInsensitive))
+            {
+                closedAddress.prepend(QStringLiteral("0x"));
+            }
+
+            m_closedWindowAddresses.insert(closedAddress);
+            rebuild(m_lastClients);
+            QTimer::singleShot(200, this, &DockModel::refresh);
+            return;
+        }
+    }
+
     if (relevantEvents.contains(eventName))
         m_eventRefreshTimer.start();
 }
@@ -640,12 +788,13 @@ void DockModel::rebuild(const QJsonArray &clients)
         else
             ++iterator;
     }
-
     for (const QJsonValue &value : clients)
     {
         const QJsonObject client = value.toObject();
-        if (client.value(QStringLiteral("address")).toString().trimmed()
-            != m_activeWindowAddress)
+        const QString clientAddress =
+            client.value(QStringLiteral("address")).toString().trimmed();
+        if (m_closedWindowAddresses.contains(clientAddress)
+            || clientAddress != m_activeWindowAddress)
             continue;
 
         if (isFullscreen(client.value(QStringLiteral("fullscreen")))
@@ -670,6 +819,7 @@ void DockModel::rebuild(const QJsonArray &clients)
         const QString clientAddress =
             client.value(QStringLiteral("address")).toString().trimmed();
         if (clientAddress.isEmpty()
+            || m_closedWindowAddresses.contains(clientAddress)
             || m_unfocusableWindowAddresses.contains(clientAddress))
         {
             continue;
@@ -797,6 +947,7 @@ void DockModel::applyClientReply(int exitCode, QProcess::ExitStatus exitStatus)
     if (!available)
     {
         m_pendingClients = {};
+        m_closedWindowAddresses.clear();
         m_clientsReady = true;
         rebuildWhenReady();
         return;
@@ -814,6 +965,25 @@ void DockModel::applyClientReply(int exitCode, QProcess::ExitStatus exitStatus)
     }
 
     m_pendingClients = document.array();
+    QSet<QString> reportedAddresses;
+    for (const QJsonValue &value : std::as_const(m_pendingClients))
+    {
+        const QString address = value.toObject()
+                                    .value(QStringLiteral("address"))
+                                    .toString()
+                                    .trimmed();
+        if (!address.isEmpty())
+            reportedAddresses.insert(address);
+    }
+    for (auto iterator = m_closedWindowAddresses.begin();
+         iterator != m_closedWindowAddresses.end();)
+    {
+        if (!reportedAddresses.contains(*iterator))
+            iterator = m_closedWindowAddresses.erase(iterator);
+        else
+            ++iterator;
+    }
+
     m_clientsReady = true;
     rebuildWhenReady();
 }

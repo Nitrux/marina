@@ -22,15 +22,22 @@ Window
     readonly property bool dockExpanded: !dockModel.autoHide
                                          || autoHideExpanded
                                          || transientSurfaceCount > 0
+    property real presentationWidth:
+        Math.min(availableWidth,
+                 dockModel.dockWidth > 0
+                 ? Math.max(dockModel.dockWidth, naturalWidth)
+                 : naturalWidth)
+    property real presentationHeight: dockExpanded
+                                      ? dockModel.dockHeight
+                                      : collapsedHeight
 
     visible: false
-    width: Math.min(availableWidth,
-                    dockModel.dockWidth > 0
-                    ? Math.max(dockModel.dockWidth, naturalWidth)
-                    : naturalWidth)
-    height: dockExpanded ? dockModel.dockHeight : collapsedHeight
-    minimumHeight: dockModel.autoHide ? collapsedHeight : dockModel.dockHeight
-    maximumHeight: dockModel.dockHeight
+    width: Math.round(presentationWidth)
+    minimumWidth: Math.round(presentationWidth)
+    maximumWidth: Math.round(presentationWidth)
+    height: Math.round(presentationHeight)
+    minimumHeight: Math.round(presentationHeight)
+    maximumHeight: Math.round(presentationHeight)
     color: "transparent"
     flags: Qt.FramelessWindowHint | Qt.Tool | Qt.WindowDoesNotAcceptFocus
     title: i18n("Marina")
@@ -38,23 +45,10 @@ Window
     onTransientSurfaceCountChanged:
     {
         if (transientSurfaceCount > 0)
-        {
-            hideTimer.stop()
             autoHideExpanded = true
-        }
-        else if (!dockHover.hovered && dockModel.autoHide)
-        {
-            hideTimer.restart()
-        }
     }
 
-    Component.onCompleted:
-    {
-        if (dockModel.autoHide)
-            hideTimer.restart()
-    }
-
-    Behavior on height
+    Behavior on presentationHeight
     {
         NumberAnimation
         {
@@ -70,14 +64,7 @@ Window
         onHoveredChanged:
         {
             if (hovered)
-            {
-                hideTimer.stop()
                 root.autoHideExpanded = true
-            }
-            else if (dockModel.autoHide && root.transientSurfaceCount === 0)
-            {
-                hideTimer.restart()
-            }
         }
     }
 
@@ -85,7 +72,21 @@ Window
     {
         id: hideTimer
         interval: dockModel.autoHideDelay
+        running: dockModel.autoHide
+                 && root.autoHideExpanded
+                 && root.transientSurfaceCount === 0
+                 && !dockHover.hovered
         onTriggered: root.autoHideExpanded = false
+    }
+
+    Connections
+    {
+        target: dockModel
+
+        function onAutoHideChanged()
+        {
+            root.autoHideExpanded = true
+        }
     }
 
     Maui.WindowBlur
@@ -154,25 +155,25 @@ Window
                     id: launcher
 
                     required property int index
-                required property string appId
-                required property string name
-                required property string iconName
-                required property bool running
-                required property bool active
-                required property bool pinned
-                required property int windowCount
-                required property bool launchable
-                required property int activeWindowIndex
-                property real dragOffset: 0
-                property bool hoverSuppressed: false
-                readonly property bool visuallyHovered:
-                    pointer.containsMouse && !hoverSuppressed
+                    required property string appId
+                    required property string name
+                    required property string iconName
+                    required property bool running
+                    required property bool active
+                    required property bool pinned
+                    required property int windowCount
+                    required property bool launchable
+                    required property int activeWindowIndex
+                    property real dragOffset: 0
+                    property bool hoverSuppressed: false
+                    readonly property bool visuallyHovered:
+                        pointer.containsMouse && !hoverSuppressed
 
-                Layout.preferredWidth: dockModel.iconSize + 8
-                Layout.preferredHeight: root.height - 8
-                scale: visuallyHovered ? 1.12 : 1.0
-                z: visuallyHovered ? 2 : 1
-                transform: Translate { x: launcher.dragOffset }
+                    Layout.preferredWidth: dockModel.iconSize + 8
+                    Layout.preferredHeight: root.height - 8
+                    scale: visuallyHovered ? 1.12 : 1.0
+                    z: visuallyHovered ? 2 : 1
+                    transform: Translate { x: launcher.dragOffset }
 
                 Behavior on scale
                 {
@@ -223,12 +224,18 @@ Window
 
                     Repeater
                     {
-                        model: Math.min(launcher.windowCount, 3)
+                        model: launcher.windowCount > 3
+                               ? 1
+                               : launcher.windowCount
 
                         Rectangle
                         {
                             required property int index
-                            width: index === windowIndicators.visibleActiveIndex ? 12 : 5
+                            width: launcher.windowCount > 3
+                                   ? (launcher.active ? 12 : 5)
+                                   : index === windowIndicators.visibleActiveIndex
+                                     ? 12
+                                     : 5
                             height: 3
                             radius: 2
                             color: Maui.Theme.highlightColor
@@ -238,6 +245,30 @@ Window
                                 NumberAnimation { duration: 120 }
                             }
                         }
+                    }
+                }
+
+                ToolButton
+                {
+                    id: windowCountBadge
+
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    anchors.margins: 2
+                    visible: launcher.windowCount > 3
+                    text: String(launcher.windowCount)
+                    display: ToolButton.TextOnly
+                    hoverEnabled: false
+                    focusPolicy: Qt.NoFocus
+                    font.bold: true
+                    font.pointSize: Maui.Style.fontSizes.small
+                    ToolTip.visible: false
+                    ToolTip.text: ""
+
+                    background: Rectangle
+                    {
+                        color: Maui.Theme.alternateBackgroundColor
+                        radius: Maui.Style.radiusV
                     }
                 }
 
@@ -467,6 +498,19 @@ Window
                             {
                                 contextMenu.close()
                                 dockModel.togglePinned(launcher.index)
+                            }
+                        }
+
+                        MenuItem
+                        {
+                            width: parent.width
+                            visible: launcher.running
+                            text: i18n("Close")
+                            icon.name: "window-close"
+                            onTriggered:
+                            {
+                                contextMenu.close()
+                                dockModel.closeWindows(launcher.index)
                             }
                         }
                     }

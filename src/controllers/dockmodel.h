@@ -3,6 +3,7 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QFileSystemWatcher>
 #include <QHash>
 #include <QJsonArray>
 #include <QLocalSocket>
@@ -13,15 +14,15 @@
 class DockModel final : public QAbstractListModel
 {
     Q_OBJECT
-    Q_PROPERTY(int dockWidth READ dockWidth CONSTANT)
-    Q_PROPERTY(int dockHeight READ dockHeight CONSTANT)
-    Q_PROPERTY(int iconSize READ iconSize CONSTANT)
-    Q_PROPERTY(int edgeMargin READ edgeMargin CONSTANT)
-    Q_PROPERTY(QString screenPlacement READ screenPlacement CONSTANT)
+    Q_PROPERTY(int dockWidth READ dockWidth NOTIFY dockWidthChanged)
+    Q_PROPERTY(int dockHeight READ dockHeight NOTIFY dockHeightChanged)
+    Q_PROPERTY(int iconSize READ iconSize NOTIFY iconSizeChanged)
+    Q_PROPERTY(int edgeMargin READ edgeMargin NOTIFY edgeMarginChanged)
+    Q_PROPERTY(QString screenPlacement READ screenPlacement NOTIFY screenPlacementChanged)
     Q_PROPERTY(QString configFile READ configFile CONSTANT)
-    Q_PROPERTY(bool autoHide READ autoHide CONSTANT)
-    Q_PROPERTY(int autoHideDelay READ autoHideDelay CONSTANT)
-    Q_PROPERTY(bool showAboveFullscreen READ showAboveFullscreen CONSTANT)
+    Q_PROPERTY(bool autoHide READ autoHide NOTIFY autoHideChanged)
+    Q_PROPERTY(int autoHideDelay READ autoHideDelay NOTIFY autoHideDelayChanged)
+    Q_PROPERTY(bool showAboveFullscreen READ showAboveFullscreen NOTIFY showAboveFullscreenChanged)
     Q_PROPERTY(bool fullscreenActive READ fullscreenActive NOTIFY fullscreenActiveChanged)
     Q_PROPERTY(bool compositorAvailable READ compositorAvailable NOTIFY compositorAvailableChanged)
 
@@ -61,11 +62,20 @@ public:
 
     Q_INVOKABLE void trigger(int row);
     Q_INVOKABLE void launchNew(int row);
+    Q_INVOKABLE void closeWindows(int row);
     Q_INVOKABLE void togglePinned(int row);
     Q_INVOKABLE void movePinned(int fromRow, int toRow);
     Q_INVOKABLE void refresh();
 
 signals:
+    void dockWidthChanged();
+    void dockHeightChanged();
+    void iconSizeChanged();
+    void edgeMarginChanged();
+    void screenPlacementChanged();
+    void autoHideChanged();
+    void autoHideDelayChanged();
+    void showAboveFullscreenChanged();
     void compositorAvailableChanged();
     void fullscreenActiveChanged();
     void launchFailed(const QString &applicationName);
@@ -100,6 +110,8 @@ private:
     };
 
     void initializeSettings();
+    void reloadSettings();
+    void scheduleSettingsReload();
     void discoverDesktopEntries();
     void registerDesktopAlias(const QString &alias, const QString &desktopId);
     QString desktopIdForWindowClass(const QString &windowClass) const;
@@ -144,6 +156,7 @@ private:
     QString m_activeWindowAddress;
     QString m_pendingActiveWindowAddress;
     QSet<int> m_fullscreenMonitorIds;
+    QSet<QString> m_closedWindowAddresses;
     QSet<QString> m_unfocusableWindowAddresses;
     QHash<int, QString> m_monitorNames;
     QHash<QString, int> m_cycleIndices;
@@ -155,4 +168,6 @@ private:
     QTimer m_eventRefreshTimer;
     QTimer m_eventReconnectTimer;
     QTimer m_refreshTimer;
+    QFileSystemWatcher m_settingsWatcher;
+    QTimer m_settingsReloadTimer;
 };

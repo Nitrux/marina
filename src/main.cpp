@@ -17,6 +17,8 @@
 #include <QSurfaceFormat>
 #include <QWindow>
 
+#include <utility>
+
 #include <KAboutData>
 #include <KLocalizedContext>
 #include <KLocalizedString>
@@ -38,9 +40,6 @@ void configureLayerShellWindow(QWindow *window, DockModel *model, bool activeScr
         return;
 
     layerWindow->setScope(QStringLiteral("org.maui.marina"));
-    layerWindow->setLayer(model->showAboveFullscreen()
-                              ? LayerShellQt::Window::LayerOverlay
-                              : LayerShellQt::Window::LayerTop);
     layerWindow->setKeyboardInteractivity(
         LayerShellQt::Window::KeyboardInteractivityNone);
     layerWindow->setWantsToBeOnActiveScreen(activeScreen);
@@ -50,10 +49,12 @@ void configureLayerShellWindow(QWindow *window, DockModel *model, bool activeScr
     LayerShellQt::Window::Anchors anchors;
     anchors |= LayerShellQt::Window::AnchorBottom;
     layerWindow->setAnchors(anchors);
-    layerWindow->setExclusiveZone(
-        model->autoHide() ? 0 : model->dockHeight() + model->edgeMargin());
-
     const auto updateGeometry = [window, layerWindow, model]() {
+        layerWindow->setLayer(model->showAboveFullscreen()
+                                  ? LayerShellQt::Window::LayerOverlay
+                                  : LayerShellQt::Window::LayerTop);
+        layerWindow->setExclusiveZone(
+            model->autoHide() ? 0 : model->dockHeight() + model->edgeMargin());
         const bool collapsed = model->autoHide() && window->height() < model->dockHeight();
         const int bottomMargin = collapsed ? 0 : model->edgeMargin();
         layerWindow->setMargins(QMargins(0, 0, 0, bottomMargin));
@@ -63,6 +64,13 @@ void configureLayerShellWindow(QWindow *window, DockModel *model, bool activeScr
 
     QObject::connect(window, &QWindow::widthChanged, window, updateGeometry);
     QObject::connect(window, &QWindow::heightChanged, window, updateGeometry);
+    QObject::connect(model, &DockModel::dockHeightChanged, window, updateGeometry);
+    QObject::connect(model, &DockModel::edgeMarginChanged, window, updateGeometry);
+    QObject::connect(model, &DockModel::autoHideChanged, window, updateGeometry);
+    QObject::connect(model,
+                     &DockModel::showAboveFullscreenChanged,
+                     window,
+                     updateGeometry);
 }
 }
 
@@ -74,6 +82,7 @@ int main(int argc, char *argv[])
     format.setAlphaBufferSize(8);
     QSurfaceFormat::setDefaultFormat(format);
     QGuiApplication application(argc, argv);
+    application.setQuitOnLastWindowClosed(false);
     application.setApplicationName(QStringLiteral("marina"));
     application.setApplicationDisplayName(QStringLiteral("Marina"));
     application.setApplicationVersion(QStringLiteral("0.1.0"));
@@ -139,12 +148,15 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    const bool allScreens = dockModel.screenPlacement() == QLatin1String("all");
+    bool allScreens = dockModel.screenPlacement() == QLatin1String("all");
     QHash<QScreen *, QPointer<QWindow>> screenWindows;
+    QPointer<QWindow> activeScreenWindow;
 
     const auto createDock = [&](QScreen *screen) -> QWindow * {
         if (allScreens && screen && screenWindows.value(screen))
             return screenWindows.value(screen);
+        if (!allScreens && activeScreenWindow)
+            return activeScreenWindow;
 
         QObject *object = component.create(engine.rootContext());
         auto *window = qobject_cast<QWindow *>(object);
@@ -162,51 +174,99 @@ int main(int argc, char *argv[])
         configureLayerShellWindow(window, &dockModel, !allScreens);
         window->show();
 
-        if (!dockModel.showAboveFullscreen())
-        {
-            const auto updateFullscreenVisibility = [window, &dockModel]() {
-                const QString screenName = window->screen() ? window->screen()->name() : QString();
-                window->setVisible(!dockModel.fullscreenActiveOnScreen(screenName));
-            };
-            QObject::connect(&dockModel,
-                             &DockModel::fullscreenActiveChanged,
-                             window,
-                             updateFullscreenVisibility);
-            QObject::connect(window,
-                             &QWindow::screenChanged,
-                             window,
-                             updateFullscreenVisibility);
-            updateFullscreenVisibility();
-        }
+        const auto updateFullscreenVisibility = [window, &dockModel]() {
+            if (dockModel.showAboveFullscreen())
+            {
+                window->setVisible(true);
+                return;
+            }
+
+            const QString screenName =
+                window->screen() ? window->screen()->name() : QString();
+            window->setVisible(!dockModel.fullscreenActiveOnScreen(screenName));
+        };
+        QObject::connect(&dockModel,
+                         &DockModel::fullscreenActiveChanged,
+                         window,
+                         updateFullscreenVisibility);
+        QObject::connect(&dockModel,
+                         &DockModel::showAboveFullscreenChanged,
+                         window,
+                         updateFullscreenVisibility);
+        QObject::connect(window,
+                         &QWindow::screenChanged,
+                         window,
+                         updateFullscreenVisibility);
+        updateFullscreenVisibility();
 
         if (allScreens && screen)
         {
             screenWindows.insert(screen, window);
-            QObject::connect(window, &QObject::destroyed, &application, [&, screen]() {
-                screenWindows.remove(screen);
+            QObject::connect(window, &QObject::destroyed, &application, [&, screen, window]() {
+                if (screenWindows.value(screen) == window)
+                    screenWindows.remove(screen);
+            });
+        }
+        else
+        {
+            activeScreenWindow = window;
+            QObject::connect(window, &QObject::destroyed, &application, [&, window]() {
+                if (activeScreenWindow == window)
+                    activeScreenWindow.clear();
             });
         }
         return window;
     };
 
-    if (allScreens)
-    {
-        for (QScreen *screen : application.screens())
-            createDock(screen);
+    const auto rebuildDocks = [&]() {
+        for (const QPointer<QWindow> &window : std::as_const(screenWindows))
+        {
+            if (window)
+            {
+                window->close();
+                window->deleteLater();
+            }
+        }
+        screenWindows.clear();
+        if (activeScreenWindow)
+        {
+            activeScreenWindow->close();
+            activeScreenWindow->deleteLater();
+            activeScreenWindow.clear();
+        }
 
-        QObject::connect(&application, &QGuiApplication::screenAdded, &application,
-                         [&](QScreen *screen) { createDock(screen); });
-        QObject::connect(&application, &QGuiApplication::screenRemoved, &application,
-                         [&](QScreen *screen) {
-                             if (screenWindows.value(screen))
-                                 screenWindows.value(screen)->deleteLater();
-                             screenWindows.remove(screen);
-                         });
-    }
-    else
-    {
-        createDock(nullptr);
-    }
+        allScreens = dockModel.screenPlacement() == QLatin1String("all");
+        if (allScreens)
+        {
+            for (QScreen *screen : application.screens())
+                createDock(screen);
+        }
+        else
+        {
+            createDock(nullptr);
+        }
+    };
+
+    rebuildDocks();
+
+    QObject::connect(&dockModel,
+                     &DockModel::screenPlacementChanged,
+                     &application,
+                     rebuildDocks);
+    QObject::connect(&application, &QGuiApplication::screenAdded, &application,
+                     [&](QScreen *screen) {
+                         if (allScreens)
+                             createDock(screen);
+                     });
+    QObject::connect(&application, &QGuiApplication::screenRemoved, &application,
+                     [&](QScreen *screen) {
+                         if (screenWindows.value(screen))
+                         {
+                             screenWindows.value(screen)->close();
+                             screenWindows.value(screen)->deleteLater();
+                         }
+                         screenWindows.remove(screen);
+                     });
 
     return application.exec();
 }
