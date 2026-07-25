@@ -305,7 +305,7 @@ void DockModel::closeWindows(int row)
         closeProcess->setProgram(QStringLiteral("hyprctl"));
         closeProcess->setArguments(
             {QStringLiteral("dispatch"),
-             QStringLiteral("hl.window.close({ window = 'address:%1' })")
+             QStringLiteral("hl.dsp.window.close({ window = 'address:%1' })")
                  .arg(address)});
         closeProcess->setProcessChannelMode(QProcess::SeparateChannels);
         connect(closeProcess,
