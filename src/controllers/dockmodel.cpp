@@ -4,10 +4,12 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <ranges>
 
 #include <QDir>
 #include <QDirIterator>
+#include <QDBusConnection>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -15,6 +17,7 @@
 #include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QUrl>
 
 namespace
 {
@@ -49,6 +52,14 @@ DockModel::DockModel(QObject *parent)
 {
     initializeSettings();
     discoverDesktopEntries();
+
+    QDBusConnection::sessionBus().connect(
+        QString(),
+        QString(),
+        QStringLiteral("com.canonical.Unity.LauncherEntry"),
+        QStringLiteral("Update"),
+        this,
+        SLOT(updateLauncherEntry(QString,QVariantMap)));
 
     connect(&m_clientsProcess,
             qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
@@ -134,6 +145,8 @@ QVariant DockModel::data(const QModelIndex &index, int role) const
                     return static_cast<int>(windowIndex);
             }
             return -1;
+        case MessageCountRole:
+            return m_messageCounts.value(entry.appId, 0);
         default:
             return {};
     }
@@ -150,7 +163,8 @@ QHash<int, QByteArray> DockModel::roleNames() const
         {PinnedRole, "pinned"},
         {WindowCountRole, "windowCount"},
         {LaunchableRole, "launchable"},
-        {ActiveWindowIndexRole, "activeWindowIndex"}
+        {ActiveWindowIndexRole, "activeWindowIndex"},
+        {MessageCountRole, "messageCount"}
     };
 }
 
@@ -760,6 +774,93 @@ QString DockModel::desktopIdForWindowClass(const QString &windowClass) const
         }
     }
     return {};
+}
+
+QString DockModel::desktopIdForLauncherUri(const QString &applicationUri) const
+{
+    const QUrl uri(applicationUri.trimmed());
+    QString launcherId;
+    if (uri.scheme() == QLatin1String("application"))
+    {
+        launcherId = uri.host();
+        if (launcherId.isEmpty())
+            launcherId = uri.path();
+    }
+    else
+    {
+        launcherId = applicationUri.trimmed();
+    }
+
+    launcherId = QUrl::fromPercentEncoding(launcherId.toUtf8()).trimmed();
+    while (launcherId.startsWith(QLatin1Char('/')))
+        launcherId.removeFirst();
+    if (launcherId.endsWith(QLatin1String(".desktop"), Qt::CaseInsensitive))
+        launcherId.chop(8);
+    if (launcherId.isEmpty())
+        return {};
+
+    if (m_desktopEntries.contains(launcherId))
+        return launcherId;
+
+    const QString key = normalizedId(launcherId);
+    for (const DockEntry &entry : m_entries)
+    {
+        if (normalizedId(entry.appId) == key)
+            return entry.appId;
+    }
+
+    return desktopIdForWindowClass(launcherId);
+}
+
+void DockModel::updateLauncherEntry(const QString &applicationUri,
+                                    const QVariantMap &properties)
+{
+    const QString appId = desktopIdForLauncherUri(applicationUri);
+    if (appId.isEmpty())
+        return;
+
+    const bool hasCount = properties.contains(QStringLiteral("count"));
+    const bool hasCountVisible =
+        properties.contains(QStringLiteral("count-visible"));
+    if (!hasCount && !hasCountVisible)
+        return;
+
+    if (hasCount)
+    {
+        m_launcherEntryCounts.insert(
+            appId,
+            qMax<qint64>(0, properties.value(QStringLiteral("count")).toLongLong()));
+    }
+    if (hasCountVisible)
+    {
+        m_launcherEntryCountVisible.insert(
+            appId,
+            properties.value(QStringLiteral("count-visible")).toBool());
+    }
+
+    const qint64 count = m_launcherEntryCounts.value(appId, 0);
+    const bool countVisible = m_launcherEntryCountVisible.value(appId, false);
+    const int messageCount = countVisible
+        ? static_cast<int>(qMin<qint64>(count, std::numeric_limits<int>::max()))
+        : 0;
+    if (m_messageCounts.value(appId, 0) == messageCount)
+        return;
+
+    if (messageCount > 0)
+        m_messageCounts.insert(appId, messageCount);
+    else
+        m_messageCounts.remove(appId);
+
+    for (qsizetype row = 0; row < m_entries.size(); ++row)
+    {
+        if (m_entries.at(row).appId == appId)
+        {
+            emit dataChanged(index(static_cast<int>(row), 0),
+                             index(static_cast<int>(row), 0),
+                             {MessageCountRole});
+            break;
+        }
+    }
 }
 
 void DockModel::rebuild(const QJsonArray &clients)

@@ -15,8 +15,10 @@
 #include <QScreen>
 #include <QStandardPaths>
 #include <QSurfaceFormat>
+#include <QTimer>
 #include <QWindow>
 
+#include <algorithm>
 #include <utility>
 
 #include <KAboutData>
@@ -30,6 +32,20 @@
 
 namespace
 {
+bool isUsableScreen(const QScreen *screen)
+{
+    // Qt creates an unnamed placeholder QScreen while Wayland has no outputs.
+    // A layer surface created for it cannot be associated with a wl_output.
+    return screen && !screen->name().isEmpty();
+}
+
+bool hasUsableScreen()
+{
+    const QList<QScreen *> screens = QGuiApplication::screens();
+    return std::any_of(screens.cbegin(), screens.cend(),
+                       [](const QScreen *screen) { return isUsableScreen(screen); });
+}
+
 void configureLayerShellWindow(QWindow *window, DockModel *model, bool activeScreen)
 {
     if (!window || !model)
@@ -153,6 +169,10 @@ int main(int argc, char *argv[])
     QPointer<QWindow> activeScreenWindow;
 
     const auto createDock = [&](QScreen *screen) -> QWindow * {
+        if ((allScreens && !isUsableScreen(screen))
+            || (!allScreens && !hasUsableScreen()))
+            return nullptr;
+
         if (allScreens && screen && screenWindows.value(screen))
             return screenWindows.value(screen);
         if (!allScreens && activeScreenWindow)
@@ -239,7 +259,10 @@ int main(int argc, char *argv[])
         if (allScreens)
         {
             for (QScreen *screen : application.screens())
-                createDock(screen);
+            {
+                if (isUsableScreen(screen))
+                    createDock(screen);
+            }
         }
         else
         {
@@ -255,8 +278,13 @@ int main(int argc, char *argv[])
                      rebuildDocks);
     QObject::connect(&application, &QGuiApplication::screenAdded, &application,
                      [&](QScreen *screen) {
+                         if (!isUsableScreen(screen))
+                             return;
+
                          if (allScreens)
                              createDock(screen);
+                         else if (!activeScreenWindow)
+                             createDock(nullptr);
                      });
     QObject::connect(&application, &QGuiApplication::screenRemoved, &application,
                      [&](QScreen *screen) {
@@ -266,6 +294,19 @@ int main(int argc, char *argv[])
                              screenWindows.value(screen)->deleteLater();
                          }
                          screenWindows.remove(screen);
+
+                         if (activeScreenWindow
+                             && (activeScreenWindow->screen() == screen || !hasUsableScreen()))
+                         {
+                             activeScreenWindow->close();
+                             activeScreenWindow->deleteLater();
+                             activeScreenWindow.clear();
+                         }
+
+                         QTimer::singleShot(0, &application, [&]() {
+                             if (!allScreens && !activeScreenWindow && hasUsableScreen())
+                                 createDock(nullptr);
+                         });
                      });
 
     return application.exec();

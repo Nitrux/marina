@@ -33,6 +33,7 @@ target_link_libraries(${PROJECT_NAME}
         KF6::I18n
         LayerShellQt::Interface
         Qt6::Core
+        Qt6::DBus
         Qt6::Gui
         Qt6::Network
         Qt6::Qml

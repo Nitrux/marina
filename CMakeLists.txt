@@ -33,7 +33,7 @@ if(NOT CMAKE_CROSSCOMPILING
 endif()
 
 find_package(Qt6 ${REQUIRED_QT_VERSION} REQUIRED NO_MODULE
-    COMPONENTS Core Gui Network Qml Quick QuickControls2)
+    COMPONENTS Core DBus Gui Network Qml Quick QuickControls2)
 find_package(KF6CoreAddons ${REQUIRED_KF_VERSION} REQUIRED)
 find_package(KF6I18n ${REQUIRED_KF_VERSION} REQUIRED)
 find_package(MauiKit4 ${REQUIRED_MAUIKIT_VERSION} REQUIRED)

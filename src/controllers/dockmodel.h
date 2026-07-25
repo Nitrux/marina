@@ -10,6 +10,7 @@
 #include <QProcess>
 #include <QSet>
 #include <QTimer>
+#include <QVariant>
 
 class DockModel final : public QAbstractListModel
 {
@@ -37,7 +38,8 @@ public:
         PinnedRole,
         WindowCountRole,
         LaunchableRole,
-        ActiveWindowIndexRole
+        ActiveWindowIndexRole,
+        MessageCountRole
     };
     Q_ENUM(Role)
 
@@ -80,6 +82,10 @@ signals:
     void fullscreenActiveChanged();
     void launchFailed(const QString &applicationName);
 
+private slots:
+    void updateLauncherEntry(const QString &applicationUri,
+                             const QVariantMap &properties);
+
 private:
     struct DesktopEntry
     {
@@ -115,6 +121,7 @@ private:
     void discoverDesktopEntries();
     void registerDesktopAlias(const QString &alias, const QString &desktopId);
     QString desktopIdForWindowClass(const QString &windowClass) const;
+    QString desktopIdForLauncherUri(const QString &applicationUri) const;
     void activateWindow(const QString &address);
     void rebuild(const QJsonArray &clients);
     void applyClientReply(int exitCode, QProcess::ExitStatus exitStatus);
@@ -160,6 +167,9 @@ private:
     QSet<QString> m_unfocusableWindowAddresses;
     QHash<int, QString> m_monitorNames;
     QHash<QString, int> m_cycleIndices;
+    QHash<QString, qint64> m_launcherEntryCounts;
+    QHash<QString, bool> m_launcherEntryCountVisible;
+    QHash<QString, int> m_messageCounts;
     QProcess m_clientsProcess;
     QProcess m_monitorsProcess;
     QProcess m_activeWindowProcess;

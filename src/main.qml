@@ -164,10 +164,13 @@ Window
                     required property int windowCount
                     required property bool launchable
                     required property int activeWindowIndex
+                    required property int messageCount
                     property real dragOffset: 0
                     property bool hoverSuppressed: false
                     readonly property bool visuallyHovered:
                         pointer.containsMouse && !hoverSuppressed
+                    readonly property bool showMessageBadge:
+                        pinned && messageCount > 0
 
                     Layout.preferredWidth: dockModel.iconSize + 8
                     Layout.preferredHeight: root.height - 8
@@ -253,7 +256,8 @@ Window
                     id: windowCountBadge
 
                     anchors.top: parent.top
-                    anchors.right: parent.right
+                    anchors.left: launcher.showMessageBadge ? parent.left : undefined
+                    anchors.right: launcher.showMessageBadge ? undefined : parent.right
                     anchors.margins: 2
                     visible: launcher.windowCount > 3
                     text: String(launcher.windowCount)
@@ -268,6 +272,33 @@ Window
                     background: Rectangle
                     {
                         color: Maui.Theme.alternateBackgroundColor
+                        radius: Maui.Style.radiusV
+                    }
+                }
+
+                ToolButton
+                {
+                    id: messageCountBadge
+
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    anchors.margins: 2
+                    visible: launcher.showMessageBadge
+                    text: launcher.messageCount > 99
+                          ? "99+"
+                          : String(launcher.messageCount)
+                    display: ToolButton.TextOnly
+                    hoverEnabled: false
+                    focusPolicy: Qt.NoFocus
+                    font.bold: true
+                    font.pointSize: Maui.Style.fontSizes.small
+                    ToolTip.visible: false
+                    ToolTip.text: ""
+                    Maui.Controls.status: Maui.Controls.Negative
+
+                    background: Rectangle
+                    {
+                        color: Maui.Theme.negativeBackgroundColor
                         radius: Maui.Style.radiusV
                     }
                 }
