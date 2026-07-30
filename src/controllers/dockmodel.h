@@ -3,6 +3,7 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QByteArray>
 #include <QFileSystemWatcher>
 #include <QHash>
 #include <QJsonArray>
@@ -133,7 +134,9 @@ private:
     void scheduleEventSocketReconnect();
     void readEventSocket();
     void handleEventLine(const QByteArray &line);
+    void collectProcessOutput(QProcess *process, QByteArray *output);
     bool launch(const DockEntry &entry);
+    static QString validatedIconSource(const QString &value);
     static QString normalizedId(const QString &value);
     static QString executableFromExec(const QString &exec);
     static QStringList commandFromExec(const QString &exec);
@@ -170,9 +173,17 @@ private:
     QHash<QString, qint64> m_launcherEntryCounts;
     QHash<QString, bool> m_launcherEntryCountVisible;
     QHash<QString, int> m_messageCounts;
+    QString m_hyprctlProgram;
+    QString m_terminalProgram;
     QProcess m_clientsProcess;
     QProcess m_monitorsProcess;
     QProcess m_activeWindowProcess;
+    QByteArray m_clientsOutput;
+    QByteArray m_monitorsOutput;
+    QByteArray m_activeWindowOutput;
+    QTimer m_clientsTimeoutTimer;
+    QTimer m_monitorsTimeoutTimer;
+    QTimer m_activeWindowTimeoutTimer;
     QLocalSocket m_eventSocket;
     QByteArray m_eventBuffer;
     QTimer m_eventRefreshTimer;

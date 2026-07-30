@@ -17,7 +17,7 @@ Marina is a QML-based workspace dock designed for Nitrux. Built with MauiKit and
 
 ```
 mauikit (>= 4.0.4)
-qt6 (>= 6.9.2)
+qt6 (>= 6.10.0)
 layer-shell-qt (>= 6.6.4)
 ```
 

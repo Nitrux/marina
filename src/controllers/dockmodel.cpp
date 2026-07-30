@@ -5,12 +5,15 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <memory>
 #include <ranges>
 
 #include <QDir>
 #include <QDirIterator>
 #include <QDBusConnection>
+#include <QFileDevice>
 #include <QFileInfo>
+#include <QImageReader>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
@@ -21,6 +24,14 @@
 
 namespace
 {
+constexpr qsizetype kMaximumCompositorOutputSize = 8 * 1024 * 1024;
+constexpr qsizetype kMaximumEventBufferSize = 256 * 1024;
+constexpr qsizetype kMaximumEventLineSize = 64 * 1024;
+constexpr qint64 kMaximumIconFileSize = 16 * 1024 * 1024;
+constexpr int kMaximumIconDimension = 4096;
+constexpr qint64 kMaximumIconPixelCount = 16 * 1024 * 1024;
+constexpr int kCompositorCommandTimeout = 5000;
+
 constexpr auto kDefaultPinnedApplications = std::to_array<const char *>({
     "org.kde.index",
     "org.kde.fiery",
@@ -29,6 +40,26 @@ constexpr auto kDefaultPinnedApplications = std::to_array<const char *>({
     "org.kde.nota",
     "org.kde.station"
 });
+
+QString trustedSystemExecutable(const QString &executable)
+{
+    const QString path = QStandardPaths::findExecutable(
+        executable,
+        {QStringLiteral("/usr/bin"), QStringLiteral("/bin")});
+    if (path.isEmpty())
+        return {};
+
+    const QFileInfo info(path);
+    const QFileDevice::Permissions unsafePermissions =
+        QFileDevice::WriteGroup | QFileDevice::WriteOther;
+    if (!info.isFile() || !info.isExecutable() || info.ownerId() != 0
+        || (info.permissions() & unsafePermissions))
+    {
+        return {};
+    }
+
+    return info.canonicalFilePath();
+}
 
 QString hyprlandEventSocketPath()
 {
@@ -50,6 +81,9 @@ QString hyprlandEventSocketPath()
 DockModel::DockModel(QObject *parent)
     : QAbstractListModel(parent)
 {
+    m_hyprctlProgram = trustedSystemExecutable(QStringLiteral("hyprctl"));
+    m_terminalProgram = trustedSystemExecutable(QStringLiteral("xdg-terminal-exec"));
+
     initializeSettings();
     discoverDesktopEntries();
 
@@ -60,6 +94,41 @@ DockModel::DockModel(QObject *parent)
         QStringLiteral("Update"),
         this,
         SLOT(updateLauncherEntry(QString,QVariantMap)));
+
+    const auto configureCompositorProcess =
+        [this](QProcess *process, QByteArray *output, QTimer *timeoutTimer) {
+            process->setProcessChannelMode(QProcess::SeparateChannels);
+            timeoutTimer->setSingleShot(true);
+            timeoutTimer->setInterval(kCompositorCommandTimeout);
+            connect(timeoutTimer, &QTimer::timeout, process, [process]() {
+                if (process->state() != QProcess::NotRunning)
+                    process->kill();
+            });
+            connect(process,
+                    &QProcess::readyReadStandardOutput,
+                    this,
+                    [this, process, output]() {
+                        collectProcessOutput(process, output);
+                    });
+            connect(process,
+                    &QProcess::readyReadStandardError,
+                    this,
+                    [process]() {
+                        process->readAllStandardError();
+                    });
+            connect(process,
+                    qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+                    timeoutTimer,
+                    [timeoutTimer](int, QProcess::ExitStatus) {
+                        timeoutTimer->stop();
+                    });
+        };
+    configureCompositorProcess(
+        &m_clientsProcess, &m_clientsOutput, &m_clientsTimeoutTimer);
+    configureCompositorProcess(
+        &m_monitorsProcess, &m_monitorsOutput, &m_monitorsTimeoutTimer);
+    configureCompositorProcess(
+        &m_activeWindowProcess, &m_activeWindowOutput, &m_activeWindowTimeoutTimer);
 
     connect(&m_clientsProcess,
             qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
@@ -73,6 +142,26 @@ DockModel::DockModel(QObject *parent)
             qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
             this,
             &DockModel::applyActiveWindowReply);
+
+    const auto connectFailedStart =
+        [this](QProcess *process, QTimer *timeoutTimer, auto handler) {
+            connect(process,
+                    &QProcess::errorOccurred,
+                    this,
+                    [this, timeoutTimer, handler](QProcess::ProcessError error) {
+                        if (error != QProcess::FailedToStart)
+                            return;
+                        timeoutTimer->stop();
+                        (this->*handler)(-1, QProcess::CrashExit);
+                    });
+        };
+    connectFailedStart(
+        &m_clientsProcess, &m_clientsTimeoutTimer, &DockModel::applyClientReply);
+    connectFailedStart(
+        &m_monitorsProcess, &m_monitorsTimeoutTimer, &DockModel::applyMonitorReply);
+    connectFailedStart(&m_activeWindowProcess,
+                       &m_activeWindowTimeoutTimer,
+                       &DockModel::applyActiveWindowReply);
 
     m_eventRefreshTimer.setSingleShot(true);
     m_eventRefreshTimer.setInterval(40);
@@ -300,14 +389,22 @@ void DockModel::closeWindows(int row)
         const QString address = window.address.trimmed();
         if (!addressPattern.match(address).hasMatch())
             continue;
+        if (m_hyprctlProgram.isEmpty())
+            continue;
 
         auto *closeProcess = new QProcess(this);
-        closeProcess->setProgram(QStringLiteral("hyprctl"));
+        closeProcess->setProgram(m_hyprctlProgram);
         closeProcess->setArguments(
             {QStringLiteral("dispatch"),
              QStringLiteral("hl.dsp.window.close({ window = 'address:%1' })")
                  .arg(address)});
-        closeProcess->setProcessChannelMode(QProcess::SeparateChannels);
+        closeProcess->setProcessChannelMode(QProcess::MergedChannels);
+        connect(closeProcess,
+                &QProcess::readyReadStandardOutput,
+                closeProcess,
+                [closeProcess]() {
+                    closeProcess->readAllStandardOutput();
+                });
         connect(closeProcess,
                 qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
                 closeProcess,
@@ -320,6 +417,10 @@ void DockModel::closeWindows(int row)
                         closeProcess->deleteLater();
                 });
         closeProcess->start(QIODevice::ReadOnly);
+        QTimer::singleShot(kCompositorCommandTimeout, closeProcess, [closeProcess]() {
+            if (closeProcess->state() != QProcess::NotRunning)
+                closeProcess->kill();
+        });
     }
 
     QTimer::singleShot(300, this, &DockModel::refresh);
@@ -372,23 +473,31 @@ void DockModel::activateWindow(const QString &address)
     static const QRegularExpression addressPattern(QStringLiteral("^0x[0-9a-fA-F]+$"));
     if (!addressPattern.match(trimmedAddress).hasMatch())
         return;
+    if (m_hyprctlProgram.isEmpty())
+        return;
 
     auto *focusProcess = new QProcess(this);
-    focusProcess->setProgram(QStringLiteral("hyprctl"));
+    focusProcess->setProgram(m_hyprctlProgram);
     focusProcess->setArguments(
         {QStringLiteral("dispatch"),
          QStringLiteral("hl.dsp.focus({ window = 'address:%1' })")
              .arg(trimmedAddress)});
-    focusProcess->setProcessChannelMode(QProcess::SeparateChannels);
+    focusProcess->setProcessChannelMode(QProcess::MergedChannels);
+    const auto focusOutput = std::make_shared<QByteArray>();
+    connect(focusProcess,
+            &QProcess::readyReadStandardOutput,
+            focusProcess,
+            [this, focusProcess, focusOutput]() {
+                collectProcessOutput(focusProcess, focusOutput.get());
+            });
 
-    const auto finishFocusRequest = [this, focusProcess, trimmedAddress]() {
+    const auto finishFocusRequest = [this, focusProcess, focusOutput, trimmedAddress]() {
         if (focusProcess->property("marinaFocusRequestFinished").toBool())
             return;
 
         focusProcess->setProperty("marinaFocusRequestFinished", true);
-        const QByteArray output = focusProcess->readAllStandardOutput()
-            + focusProcess->readAllStandardError();
-        if (output.toLower().contains(QByteArrayLiteral("window not found")))
+        collectProcessOutput(focusProcess, focusOutput.get());
+        if (focusOutput->toLower().contains(QByteArrayLiteral("window not found")))
         {
             m_unfocusableWindowAddresses.insert(trimmedAddress);
             rebuild(m_lastClients);
@@ -410,6 +519,10 @@ void DockModel::activateWindow(const QString &address)
                     finishFocusRequest();
             });
     focusProcess->start(QIODevice::ReadOnly);
+    QTimer::singleShot(kCompositorCommandTimeout, focusProcess, [focusProcess]() {
+        if (focusProcess->state() != QProcess::NotRunning)
+            focusProcess->kill();
+    });
 }
 
 void DockModel::refresh()
@@ -423,24 +536,46 @@ void DockModel::refresh()
     }
 
     m_refreshPending = false;
+    if (m_hyprctlProgram.isEmpty())
+    {
+        const bool availabilityChanged = m_compositorAvailable;
+        m_compositorAvailable = false;
+        m_pendingClients = {};
+        m_pendingActiveWindowAddress.clear();
+        m_monitorNames.clear();
+        m_clientsReady = true;
+        m_monitorsReady = true;
+        m_activeWindowReady = true;
+        if (availabilityChanged)
+            emit compositorAvailableChanged();
+        rebuildWhenReady();
+        return;
+    }
+
     m_clientsReady = false;
     m_monitorsReady = false;
+    m_clientsOutput.clear();
+    m_monitorsOutput.clear();
+    m_activeWindowOutput.clear();
     m_activeWindowReady = false;
-    m_monitorsProcess.setProgram(QStringLiteral("hyprctl"));
+    m_monitorsProcess.setProgram(m_hyprctlProgram);
     m_monitorsProcess.setArguments({QStringLiteral("-j"), QStringLiteral("monitors")});
     m_monitorsProcess.start(QIODevice::ReadOnly);
+    m_monitorsTimeoutTimer.start();
 
-    m_activeWindowProcess.setProgram(QStringLiteral("hyprctl"));
+    m_activeWindowProcess.setProgram(m_hyprctlProgram);
     m_activeWindowProcess.setArguments(
         {QStringLiteral("-j"), QStringLiteral("activewindow")});
     m_activeWindowProcess.start(QIODevice::ReadOnly);
+    m_activeWindowTimeoutTimer.start();
 
-    m_clientsProcess.setProgram(QStringLiteral("hyprctl"));
+    m_clientsProcess.setProgram(m_hyprctlProgram);
     // Do not request unmapped clients: during window teardown Hyprland can retain
     // a client entry after its Wayland surface has already been destroyed.
     m_clientsProcess.setArguments(
         {QStringLiteral("-j"), QStringLiteral("clients")});
     m_clientsProcess.start(QIODevice::ReadOnly);
+    m_clientsTimeoutTimer.start();
 }
 
 void DockModel::initializeSettings()
@@ -628,11 +763,30 @@ void DockModel::scheduleEventSocketReconnect()
 
 void DockModel::readEventSocket()
 {
-    m_eventBuffer += m_eventSocket.readAll();
+    const qint64 remainingCapacity =
+        kMaximumEventBufferSize - m_eventBuffer.size();
+    m_eventBuffer += m_eventSocket.read(remainingCapacity + 1);
+    if (m_eventBuffer.size() > kMaximumEventBufferSize
+        || (m_eventBuffer.indexOf('\n') < 0
+            && m_eventBuffer.size() > kMaximumEventLineSize))
+    {
+        m_eventBuffer.clear();
+        m_eventSocket.abort();
+        scheduleEventSocketReconnect();
+        return;
+    }
 
     int newlineIndex = m_eventBuffer.indexOf('\n');
     while (newlineIndex >= 0)
     {
+        if (newlineIndex > kMaximumEventLineSize)
+        {
+            m_eventBuffer.clear();
+            m_eventSocket.abort();
+            scheduleEventSocketReconnect();
+            return;
+        }
+
         const QByteArray line = m_eventBuffer.left(newlineIndex).trimmed();
         m_eventBuffer.remove(0, newlineIndex + 1);
         if (!line.isEmpty())
@@ -730,9 +884,8 @@ void DockModel::discoverDesktopEntries()
             DesktopEntry entry;
             entry.id = QFileInfo(path).completeBaseName();
             entry.name = desktopFile.value(QStringLiteral("Name"), entry.id).toString().trimmed();
-            entry.icon = desktopFile.value(QStringLiteral("Icon"),
-                                           QStringLiteral("application-x-executable"))
-                             .toString().trimmed();
+            entry.icon = validatedIconSource(
+                desktopFile.value(QStringLiteral("Icon")).toString());
             entry.executable = desktopFile.value(QStringLiteral("Exec")).toString().trimmed();
             entry.startupWmClass =
                 desktopFile.value(QStringLiteral("StartupWMClass")).toString().trimmed();
@@ -1038,6 +1191,7 @@ void DockModel::rebuild(const QJsonArray &clients)
 
 void DockModel::applyClientReply(int exitCode, QProcess::ExitStatus exitStatus)
 {
+    collectProcessOutput(&m_clientsProcess, &m_clientsOutput);
     const bool available = exitStatus == QProcess::NormalExit && exitCode == 0;
     if (available != m_compositorAvailable)
     {
@@ -1047,6 +1201,7 @@ void DockModel::applyClientReply(int exitCode, QProcess::ExitStatus exitStatus)
 
     if (!available)
     {
+        m_clientsOutput.clear();
         m_pendingClients = {};
         m_closedWindowAddresses.clear();
         m_clientsReady = true;
@@ -1056,7 +1211,8 @@ void DockModel::applyClientReply(int exitCode, QProcess::ExitStatus exitStatus)
 
     QJsonParseError parseError;
     const QJsonDocument document =
-        QJsonDocument::fromJson(m_clientsProcess.readAllStandardOutput(), &parseError);
+        QJsonDocument::fromJson(m_clientsOutput, &parseError);
+    m_clientsOutput.clear();
     if (parseError.error != QJsonParseError::NoError || !document.isArray())
     {
         m_pendingClients = {};
@@ -1091,12 +1247,13 @@ void DockModel::applyClientReply(int exitCode, QProcess::ExitStatus exitStatus)
 
 void DockModel::applyMonitorReply(int exitCode, QProcess::ExitStatus exitStatus)
 {
+    collectProcessOutput(&m_monitorsProcess, &m_monitorsOutput);
     m_monitorNames.clear();
     if (exitStatus == QProcess::NormalExit && exitCode == 0)
     {
         QJsonParseError parseError;
         const QJsonDocument document =
-            QJsonDocument::fromJson(m_monitorsProcess.readAllStandardOutput(), &parseError);
+            QJsonDocument::fromJson(m_monitorsOutput, &parseError);
         if (parseError.error == QJsonParseError::NoError && document.isArray())
         {
             for (const QJsonValue &value : document.array())
@@ -1110,6 +1267,7 @@ void DockModel::applyMonitorReply(int exitCode, QProcess::ExitStatus exitStatus)
             }
         }
     }
+    m_monitorsOutput.clear();
 
     m_monitorsReady = true;
     rebuildWhenReady();
@@ -1117,12 +1275,13 @@ void DockModel::applyMonitorReply(int exitCode, QProcess::ExitStatus exitStatus)
 
 void DockModel::applyActiveWindowReply(int exitCode, QProcess::ExitStatus exitStatus)
 {
+    collectProcessOutput(&m_activeWindowProcess, &m_activeWindowOutput);
     m_pendingActiveWindowAddress.clear();
     if (exitStatus == QProcess::NormalExit && exitCode == 0)
     {
         QJsonParseError parseError;
         const QJsonDocument document = QJsonDocument::fromJson(
-            m_activeWindowProcess.readAllStandardOutput(), &parseError);
+            m_activeWindowOutput, &parseError);
         if (parseError.error == QJsonParseError::NoError && document.isObject())
         {
             m_pendingActiveWindowAddress = document.object()
@@ -1131,6 +1290,7 @@ void DockModel::applyActiveWindowReply(int exitCode, QProcess::ExitStatus exitSt
                                                .trimmed();
         }
     }
+    m_activeWindowOutput.clear();
 
     m_activeWindowReady = true;
     rebuildWhenReady();
@@ -1161,14 +1321,83 @@ bool DockModel::launch(const DockEntry &entry)
     QStringList arguments = command.sliced(1);
     if (entry.terminal)
     {
+        if (m_terminalProgram.isEmpty())
+            return false;
         arguments.prepend(program);
-        program = QStringLiteral("xdg-terminal-exec");
+        program = m_terminalProgram;
     }
 
     const bool started = QProcess::startDetached(program, arguments);
     if (started)
         QTimer::singleShot(500, this, &DockModel::refresh);
     return started;
+}
+
+void DockModel::collectProcessOutput(QProcess *process, QByteArray *output)
+{
+    if (!process || !output)
+        return;
+
+    const QByteArray chunk = process->readAllStandardOutput();
+    if (chunk.size() > kMaximumCompositorOutputSize - output->size())
+    {
+        output->clear();
+        if (process->state() != QProcess::NotRunning)
+            process->kill();
+        return;
+    }
+
+    output->append(chunk);
+}
+
+QString DockModel::validatedIconSource(const QString &value)
+{
+    const QString fallbackIcon = QStringLiteral("application-x-executable");
+    const QString source = value.trimmed();
+    if (source.isEmpty())
+        return fallbackIcon;
+
+    static const QRegularExpression themeIconPattern(
+        QStringLiteral("^[A-Za-z0-9][A-Za-z0-9._+-]*$"));
+    if (themeIconPattern.match(source).hasMatch())
+        return source;
+
+    if (!QDir::isAbsolutePath(source))
+        return fallbackIcon;
+
+    const QFileInfo fileInfo(source);
+    const QString canonicalPath = fileInfo.canonicalFilePath();
+    if (canonicalPath.isEmpty() || !fileInfo.isFile() || !fileInfo.isReadable()
+        || fileInfo.size() < 0 || fileInfo.size() > kMaximumIconFileSize)
+    {
+        return fallbackIcon;
+    }
+
+    static const QSet<QByteArray> safeRasterFormats = {
+        QByteArrayLiteral("bmp"),
+        QByteArrayLiteral("gif"),
+        QByteArrayLiteral("jpeg"),
+        QByteArrayLiteral("jpg"),
+        QByteArrayLiteral("png"),
+        QByteArrayLiteral("webp"),
+        QByteArrayLiteral("xpm")
+    };
+
+    QImageReader reader(canonicalPath);
+    reader.setDecideFormatFromContent(true);
+    if (!reader.canRead() || !safeRasterFormats.contains(reader.format().toLower()))
+        return fallbackIcon;
+
+    const QSize dimensions = reader.size();
+    const qint64 pixelCount =
+        static_cast<qint64>(dimensions.width()) * dimensions.height();
+    if (!dimensions.isValid() || dimensions.isEmpty()
+        || dimensions.width() > kMaximumIconDimension
+        || dimensions.height() > kMaximumIconDimension
+        || pixelCount > kMaximumIconPixelCount)
+        return fallbackIcon;
+
+    return canonicalPath;
 }
 
 QString DockModel::normalizedId(const QString &value)
