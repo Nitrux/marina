@@ -163,6 +163,7 @@ Window
                     required property bool pinned
                     required property int windowCount
                     required property bool launchable
+                    required property bool launching
                     required property int activeWindowIndex
                     required property int messageCount
                     property real dragOffset: 0
@@ -208,6 +209,103 @@ Window
                     iconSource: launcher.iconName
                     iconSizeHint: dockModel.iconSize
                     color: Maui.Theme.textColor
+                }
+
+                Item
+                {
+                    id: launchIndicator
+
+                    property real arcStart: -Math.PI / 2
+                    property real arcSpan: Math.PI * 0.35
+
+                    anchors.centerIn: parent
+                    width: Math.max(18, Math.min(30, dockModel.iconSize * 0.52))
+                    height: width
+                    visible: launcher.launching
+
+                    Canvas
+                    {
+                        id: launchCanvas
+
+                        anchors.fill: parent
+
+                        onPaint:
+                        {
+                            const context = getContext("2d")
+                            const center = width / 2
+                            const lineWidth = Math.max(1.5, width / 12)
+                            const outlineWidth = lineWidth + 2.5
+                            const radius = center - (outlineWidth / 2)
+
+                            context.reset()
+                            context.lineCap = "round"
+                            context.beginPath()
+                            context.lineWidth = outlineWidth
+                            context.strokeStyle = Qt.alpha(Maui.Theme.backgroundColor, 0.30)
+                            context.arc(center,
+                                        center,
+                                        radius,
+                                        launchIndicator.arcStart,
+                                        launchIndicator.arcStart + launchIndicator.arcSpan)
+                            context.stroke()
+
+                            context.beginPath()
+                            context.lineWidth = lineWidth
+                            context.strokeStyle = Maui.Theme.highlightColor
+                            context.arc(center,
+                                        center,
+                                        radius,
+                                        launchIndicator.arcStart,
+                                        launchIndicator.arcStart + launchIndicator.arcSpan)
+                            context.stroke()
+                        }
+
+                        Connections
+                        {
+                            target: launchIndicator
+
+                            function onArcStartChanged()
+                            {
+                                launchCanvas.requestPaint()
+                            }
+
+                            function onArcSpanChanged()
+                            {
+                                launchCanvas.requestPaint()
+                            }
+                        }
+                    }
+
+                    NumberAnimation on arcStart
+                    {
+                        from: -Math.PI / 2
+                        to: (Math.PI * 3) / 2
+                        duration: 900
+                        loops: Animation.Infinite
+                        running: launcher.launching
+                    }
+
+                    SequentialAnimation on arcSpan
+                    {
+                        loops: Animation.Infinite
+                        running: launcher.launching
+
+                        NumberAnimation
+                        {
+                            from: Math.PI * 0.35
+                            to: Math.PI * 1.75
+                            duration: 520
+                            easing.type: Easing.InOutCubic
+                        }
+
+                        NumberAnimation
+                        {
+                            from: Math.PI * 1.75
+                            to: Math.PI * 0.35
+                            duration: 420
+                            easing.type: Easing.InOutCubic
+                        }
+                    }
                 }
 
                 Row

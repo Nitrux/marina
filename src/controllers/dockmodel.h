@@ -40,7 +40,8 @@ public:
         WindowCountRole,
         LaunchableRole,
         ActiveWindowIndexRole,
-        MessageCountRole
+        MessageCountRole,
+        LaunchingRole
     };
     Q_ENUM(Role)
 
@@ -136,6 +137,7 @@ private:
     void handleEventLine(const QByteArray &line);
     void collectProcessOutput(QProcess *process, QByteArray *output);
     bool launch(const DockEntry &entry);
+    void setLaunching(const QString &appId, bool launching);
     static QString validatedIconSource(const QString &value);
     static QString normalizedId(const QString &value);
     static QString executableFromExec(const QString &exec);
@@ -173,6 +175,8 @@ private:
     QHash<QString, qint64> m_launcherEntryCounts;
     QHash<QString, bool> m_launcherEntryCountVisible;
     QHash<QString, int> m_messageCounts;
+    QSet<QString> m_launchingAppIds;
+    QHash<QString, QTimer *> m_launchTimers;
     QString m_hyprctlProgram;
     QString m_terminalProgram;
     QProcess m_clientsProcess;

@@ -236,6 +236,8 @@ QVariant DockModel::data(const QModelIndex &index, int role) const
             return -1;
         case MessageCountRole:
             return m_messageCounts.value(entry.appId, 0);
+        case LaunchingRole:
+            return m_launchingAppIds.contains(entry.appId);
         default:
             return {};
     }
@@ -253,7 +255,8 @@ QHash<int, QByteArray> DockModel::roleNames() const
         {WindowCountRole, "windowCount"},
         {LaunchableRole, "launchable"},
         {ActiveWindowIndexRole, "activeWindowIndex"},
-        {MessageCountRole, "messageCount"}
+        {MessageCountRole, "messageCount"},
+        {LaunchingRole, "launching"}
     };
 }
 
@@ -1110,6 +1113,8 @@ void DockModel::rebuild(const QJsonArray &clients)
             }
         }
 
+        setLaunching(entry.appId, false);
+
         DockEntry::Window window;
         window.address = clientAddress;
         window.active = clientAddress == m_activeWindowAddress;
@@ -1313,6 +1318,9 @@ void DockModel::rebuildWhenReady()
 
 bool DockModel::launch(const DockEntry &entry)
 {
+    if (entry.appId.isEmpty())
+        return false;
+
     const QStringList command = commandFromExec(entry.executable);
     if (command.isEmpty())
         return false;
@@ -1329,8 +1337,54 @@ bool DockModel::launch(const DockEntry &entry)
 
     const bool started = QProcess::startDetached(program, arguments);
     if (started)
+    {
+        setLaunching(entry.appId, true);
         QTimer::singleShot(500, this, &DockModel::refresh);
+    }
+    else
+    {
+        setLaunching(entry.appId, false);
+    }
     return started;
+}
+
+void DockModel::setLaunching(const QString &appId, bool launching)
+{
+    if (appId.isEmpty())
+        return;
+
+    if (launching)
+    {
+        if (m_launchingAppIds.contains(appId))
+            return;
+
+        m_launchingAppIds.insert(appId);
+        auto *timer = new QTimer(this);
+        timer->setSingleShot(true);
+        timer->setInterval(10000);
+        m_launchTimers.insert(appId, timer);
+        connect(timer, &QTimer::timeout, this, [this, appId]() {
+            setLaunching(appId, false);
+        });
+        timer->start();
+    }
+    else
+    {
+        if (!m_launchingAppIds.remove(appId))
+            return;
+
+        if (auto *timer = m_launchTimers.take(appId))
+            timer->deleteLater();
+    }
+
+    for (int row = 0; row < m_entries.size(); ++row)
+    {
+        if (m_entries.at(row).appId == appId)
+        {
+            emit dataChanged(index(row, 0), index(row, 0), {LaunchingRole});
+            break;
+        }
+    }
 }
 
 void DockModel::collectProcessOutput(QProcess *process, QByteArray *output)
