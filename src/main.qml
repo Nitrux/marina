@@ -251,7 +251,7 @@ Window
 
                             context.beginPath()
                             context.lineWidth = lineWidth
-                            context.strokeStyle = Maui.Theme.highlightColor
+                            context.strokeStyle = Maui.Theme.alternateBackgroundColor
                             context.arc(center,
                                         center,
                                         radius,
