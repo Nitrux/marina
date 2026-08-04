@@ -12,8 +12,10 @@
 #include <QDirIterator>
 #include <QDBusConnection>
 #include <QFileDevice>
+#include <QFile>
 #include <QFileInfo>
 #include <QImageReader>
+#include <QLoggingCategory>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
@@ -21,6 +23,8 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QUrl>
+
+Q_LOGGING_CATEGORY(marinaDockLog, "marina.dock")
 
 namespace
 {
@@ -875,10 +879,11 @@ void DockModel::discoverDesktopEntries()
 
             QSettings desktopFile(path, QSettings::IniFormat);
             desktopFile.beginGroup(QStringLiteral("Desktop Entry"));
-            if (desktopFile.value(QStringLiteral("Type"), QStringLiteral("Application")).toString()
-                    != QLatin1String("Application")
-                || desktopFile.value(QStringLiteral("Hidden"), false).toBool()
-                || desktopFile.value(QStringLiteral("NoDisplay"), false).toBool())
+            const QString desktopType =
+                desktopFile.value(QStringLiteral("Type"), QStringLiteral("Application")).toString();
+            const bool hidden = desktopFile.value(QStringLiteral("Hidden"), false).toBool();
+            const bool noDisplay = desktopFile.value(QStringLiteral("NoDisplay"), false).toBool();
+            if (desktopType != QLatin1String("Application"))
             {
                 desktopFile.endGroup();
                 continue;
@@ -892,16 +897,28 @@ void DockModel::discoverDesktopEntries()
             entry.executable = desktopFile.value(QStringLiteral("Exec")).toString().trimmed();
             entry.startupWmClass =
                 desktopFile.value(QStringLiteral("StartupWMClass")).toString().trimmed();
+            entry.desktopEntryName =
+                desktopFile.value(QStringLiteral("DesktopEntryName")).toString().trimmed();
             entry.terminal = desktopFile.value(QStringLiteral("Terminal"), false).toBool();
+            registerDesktopIconAlias(entry.id, entry.icon);
+            registerDesktopIconAlias(entry.name, entry.icon);
+            registerDesktopIconAlias(entry.startupWmClass, entry.icon);
+            registerDesktopIconAlias(entry.desktopEntryName, entry.icon);
+            registerDesktopIconAlias(desktopFile.value(QStringLiteral("X-GNOME-WMClass")).toString(), entry.icon);
+            registerDesktopIconAlias(desktopFile.value(QStringLiteral("X-KDE-WMClass")).toString(), entry.icon);
+            registerDesktopIconAlias(executableFromExec(entry.executable), entry.icon);
             desktopFile.endGroup();
 
-            if (entry.executable.isEmpty() || m_desktopEntries.contains(entry.id))
+            if (hidden || noDisplay || entry.executable.isEmpty() || m_desktopEntries.contains(entry.id))
                 continue;
 
             m_desktopEntries.insert(entry.id, entry);
             registerDesktopAlias(entry.id, entry.id);
             registerDesktopAlias(entry.name, entry.id);
             registerDesktopAlias(entry.startupWmClass, entry.id);
+            registerDesktopAlias(entry.desktopEntryName, entry.id);
+            registerDesktopAlias(desktopFile.value(QStringLiteral("Desktop Entry/X-GNOME-WMClass")).toString(), entry.id);
+            registerDesktopAlias(desktopFile.value(QStringLiteral("Desktop Entry/X-KDE-WMClass")).toString(), entry.id);
             registerDesktopAlias(executableFromExec(entry.executable), entry.id);
         }
     }
@@ -914,13 +931,67 @@ void DockModel::registerDesktopAlias(const QString &alias, const QString &deskto
         m_desktopAliases.insert(key, desktopId);
 }
 
+void DockModel::registerDesktopIconAlias(const QString &alias, const QString &icon)
+{
+    const QString source = icon.trimmed();
+    if (source.isEmpty() || source == QLatin1String("application-x-executable"))
+        return;
+
+    for (const QString &key : identityCandidates(alias))
+    {
+        if (!m_desktopIconAliases.contains(key))
+            m_desktopIconAliases.insert(key, source);
+    }
+}
+
+QString DockModel::desktopIconForWindow(const QString &windowClass) const
+{
+    for (const QString &key : identityCandidates(windowClass))
+    {
+        const auto match = m_desktopIconAliases.constFind(key);
+        if (match != m_desktopIconAliases.constEnd())
+            return match.value();
+    }
+    return {};
+}
+
+QStringList DockModel::identityCandidates(const QString &value)
+{
+    QString candidate = value.trimmed();
+    while (candidate.startsWith(QLatin1Char('/')))
+        candidate.removeFirst();
+    if (candidate.endsWith(QStringLiteral(".desktop"), Qt::CaseInsensitive))
+        candidate.chop(8);
+
+    QStringList candidates;
+    const auto add = [&candidates](const QString &item) {
+        const QString key = DockModel::normalizedId(item);
+        if (!key.isEmpty() && !candidates.contains(key))
+            candidates.append(key);
+    };
+    add(candidate);
+
+    const QStringList dotParts = candidate.split(QLatin1Char('.'), Qt::SkipEmptyParts);
+    for (qsizetype index = 1; index < dotParts.size(); ++index)
+        add(dotParts.mid(index).join(QLatin1Char('.')));
+
+    const QStringList separatorParts = candidate.split(QRegularExpression(QStringLiteral("[._-]+")), Qt::SkipEmptyParts);
+    if (!separatorParts.isEmpty())
+        add(separatorParts.constLast());
+    return candidates;
+}
+
 QString DockModel::desktopIdForWindowClass(const QString &windowClass) const
 {
-    const QString key = normalizedId(windowClass);
-    const auto exact = m_desktopAliases.constFind(key);
-    if (exact != m_desktopAliases.constEnd())
-        return exact.value();
+    const QStringList candidates = identityCandidates(windowClass);
+    for (const QString &key : candidates)
+    {
+        const auto exact = m_desktopAliases.constFind(key);
+        if (exact != m_desktopAliases.constEnd())
+            return exact.value();
+    }
 
+    const QString key = candidates.isEmpty() ? QString() : candidates.constFirst();
     for (auto iterator = m_desktopAliases.constBegin(); iterator != m_desktopAliases.constEnd(); ++iterator)
     {
         if (iterator.key().size() >= 4
@@ -1087,10 +1158,18 @@ void DockModel::rebuild(const QJsonArray &clients)
             windowClass = client.value(QStringLiteral("initialClass")).toString().trimmed();
         if (windowClass.isEmpty())
             continue;
-
+        const qint64 pid = client.value(QStringLiteral("pid")).toVariant().toLongLong();
+        const QString processName = processNameFromPid(pid);
         QString appId = desktopIdForWindowClass(windowClass);
         if (appId.isEmpty())
+            appId = desktopIdForWindowClass(processName);
+        if (appId.isEmpty())
             appId = normalizedId(windowClass);
+        qCDebug(marinaDockLog).noquote()
+            << "foreign toplevel app_id/class=" << windowClass
+            << "initialClass=" << client.value(QStringLiteral("initialClass")).toString().trimmed()
+            << "process=" << processName
+            << "resolvedDesktopId=" << appId;
         if (appId.isEmpty())
             continue;
 
@@ -1109,7 +1188,11 @@ void DockModel::rebuild(const QJsonArray &clients)
             else
             {
                 entry.name = displayNameForClass(windowClass);
-                entry.icon = QStringLiteral("application-x-executable");
+                entry.icon = desktopIconForWindow(windowClass);
+                if (entry.icon.isEmpty())
+                    entry.icon = desktopIconForWindow(processName);
+                if (entry.icon.isEmpty())
+                    entry.icon = QStringLiteral("application-x-executable");
             }
         }
 
@@ -1130,9 +1213,9 @@ void DockModel::rebuild(const QJsonArray &clients)
         QString appId = configuredId;
         if (!m_desktopEntries.contains(appId))
         {
-            const auto alias = m_desktopAliases.constFind(normalizedId(appId));
-            if (alias != m_desktopAliases.constEnd())
-                appId = alias.value();
+            const QString resolvedId = desktopIdForWindowClass(appId);
+            if (!resolvedId.isEmpty())
+                appId = resolvedId;
         }
 
         DockEntry entry = runningEntries.take(appId);
@@ -1497,6 +1580,24 @@ QStringList DockModel::commandFromExec(const QString &exec)
     }
     command.removeAll(QString());
     return command;
+}
+
+QString DockModel::processNameFromPid(qint64 pid)
+{
+    if (pid <= 0)
+        return {};
+
+    QFile commFile(QStringLiteral("/proc/%1/comm").arg(pid));
+    if (commFile.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        const QString comm = QString::fromLocal8Bit(commFile.readLine()).trimmed();
+        if (!comm.isEmpty())
+            return comm;
+    }
+
+    const QFileInfo exeLink(QStringLiteral("/proc/%1/exe").arg(pid));
+    const QString target = exeLink.symLinkTarget().trimmed();
+    return target.isEmpty() ? QString() : QFileInfo(target).completeBaseName();
 }
 
 QString DockModel::displayNameForClass(const QString &windowClass)

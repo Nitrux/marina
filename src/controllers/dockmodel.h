@@ -96,6 +96,7 @@ private:
         QString icon;
         QString executable;
         QString startupWmClass;
+        QString desktopEntryName;
         bool terminal = false;
     };
 
@@ -122,6 +123,8 @@ private:
     void scheduleSettingsReload();
     void discoverDesktopEntries();
     void registerDesktopAlias(const QString &alias, const QString &desktopId);
+    void registerDesktopIconAlias(const QString &alias, const QString &icon);
+    QString desktopIconForWindow(const QString &windowClass) const;
     QString desktopIdForWindowClass(const QString &windowClass) const;
     QString desktopIdForLauncherUri(const QString &applicationUri) const;
     void activateWindow(const QString &address);
@@ -143,9 +146,12 @@ private:
     static QString executableFromExec(const QString &exec);
     static QStringList commandFromExec(const QString &exec);
     static QString displayNameForClass(const QString &windowClass);
+    static QStringList identityCandidates(const QString &value);
+    static QString processNameFromPid(qint64 pid);
 
     QHash<QString, DesktopEntry> m_desktopEntries;
     QHash<QString, QString> m_desktopAliases;
+    QHash<QString, QString> m_desktopIconAliases;
     QList<DockEntry> m_entries;
     QStringList m_pinnedIds;
     QString m_configFile;
