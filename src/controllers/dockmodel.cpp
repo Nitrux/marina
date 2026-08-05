@@ -242,6 +242,8 @@ QVariant DockModel::data(const QModelIndex &index, int role) const
             return m_messageCounts.value(entry.appId, 0);
         case LaunchingRole:
             return m_launchingAppIds.contains(entry.appId);
+        case SeparatorRole:
+            return !entry.pinned && index.row() > 0 && m_entries.at(index.row() - 1).pinned;
         default:
             return {};
     }
@@ -260,7 +262,8 @@ QHash<int, QByteArray> DockModel::roleNames() const
         {LaunchableRole, "launchable"},
         {ActiveWindowIndexRole, "activeWindowIndex"},
         {MessageCountRole, "messageCount"},
-        {LaunchingRole, "launching"}
+        {LaunchingRole, "launching"},
+        {SeparatorRole, "separatorBefore"}
     };
 }
 

@@ -31,6 +31,7 @@ Window
                                       ? dockModel.dockHeight
                                       : collapsedHeight
 
+
     visible: false
     width: Math.round(presentationWidth)
     minimumWidth: Math.round(presentationWidth)
@@ -126,9 +127,7 @@ Window
 
         ScrollBar.horizontal: ScrollBar
         {
-            policy: dockViewport.contentWidth > dockViewport.width
-                    ? ScrollBar.AsNeeded
-                    : ScrollBar.AlwaysOff
+            policy: ScrollBar.AlwaysOff
         }
 
         RowLayout
@@ -148,6 +147,7 @@ Window
 
             Repeater
             {
+                id: launcherRepeater
                 model: dockModel
 
                 delegate: Item
@@ -166,6 +166,7 @@ Window
                     required property bool launching
                     required property int activeWindowIndex
                     required property int messageCount
+                    required property bool separatorBefore
                     property real dragOffset: 0
                     property bool hoverSuppressed: false
                     readonly property bool visuallyHovered:
@@ -173,11 +174,46 @@ Window
                     readonly property bool showMessageBadge:
                         pinned && messageCount > 0
 
+                    readonly property real separatorBuffer:
+                        separatorBefore && index > 0 ? Maui.Style.space.small : 0
+
                     Layout.preferredWidth: dockModel.iconSize + 8
+                    Layout.leftMargin: separatorBuffer
                     Layout.preferredHeight: root.height - 8
                     scale: visuallyHovered ? 1.12 : 1.0
                     z: visuallyHovered ? 2 : 1
                     transform: Translate { x: launcher.dragOffset }
+
+                    ToolSeparator
+                    {
+                        visible: launcher.separatorBefore && launcher.index > 0
+                        orientation: Qt.Vertical
+                        parent: separatorLayer
+                        x:
+                        {
+                            const previous = launcherRepeater.itemAt(launcher.index - 1)
+                            const currentPoint = launcher.mapToItem(root.contentItem, 0, 0)
+                            const previousPoint = previous
+                                    ? previous.mapToItem(root.contentItem, previous.width, 0)
+                                    : currentPoint
+                            return ((currentPoint.x + previousPoint.x) / 2) - separatorLayer.x - (width / 2)
+                        }
+                        y: launcher.mapToItem(root.contentItem, 0, 0).y - separatorLayer.y + 10
+                        width: leftPadding + 1 + rightPadding
+                        height: Math.max(1, launcher.height - 20)
+                        z: 3
+                        topPadding: 14
+                        bottomPadding: 14
+                        leftPadding: 14
+                        rightPadding: 14
+
+                        contentItem: Rectangle
+                        {
+                            color: Maui.Theme.textColor
+                            opacity: 0.25
+                        }
+
+                    }
 
                 Behavior on scale
                 {
@@ -650,4 +686,12 @@ Window
         }
     }
 
+        Item
+        {
+            id: separatorLayer
+
+            anchors.fill: dockViewport
+            z: 4
+            opacity: dockContent.opacity
+        }
 }

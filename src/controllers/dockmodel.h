@@ -41,7 +41,8 @@ public:
         LaunchableRole,
         ActiveWindowIndexRole,
         MessageCountRole,
-        LaunchingRole
+        LaunchingRole,
+        SeparatorRole
     };
     Q_ENUM(Role)
 
