@@ -620,11 +620,8 @@ Window
                     Rectangle
                     {
                         anchors.fill: parent
-                        color: Qt.rgba(Maui.Theme.backgroundColor.r,
-                                       Maui.Theme.backgroundColor.g,
-                                       Maui.Theme.backgroundColor.b,
-                                       1)
-                        border.color: Qt.alpha(Maui.Theme.textColor, 0.14)
+                        color: Qt.alpha(Maui.Theme.backgroundColor, 0.76)
+                        border.color: Qt.alpha(Maui.Theme.textColor, 0.10)
                         border.width: 1
                         radius: Maui.Style.radiusV
                     }
