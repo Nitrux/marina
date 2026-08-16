@@ -40,6 +40,7 @@ public:
         WindowCountRole,
         LaunchableRole,
         ActiveWindowIndexRole,
+        FloatingRole,
         MessageCountRole,
         LaunchingRole,
         SeparatorRole
@@ -68,6 +69,7 @@ public:
     Q_INVOKABLE void trigger(int row);
     Q_INVOKABLE void launchNew(int row);
     Q_INVOKABLE void closeWindows(int row);
+    Q_INVOKABLE void toggleFloating(int row);
     Q_INVOKABLE void togglePinned(int row);
     Q_INVOKABLE void movePinned(int fromRow, int toRow);
     Q_INVOKABLE void refresh();
@@ -107,6 +109,7 @@ private:
         {
             QString address;
             bool active = false;
+            bool floating = false;
         };
 
         QString appId;

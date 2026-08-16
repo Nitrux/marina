@@ -234,6 +234,7 @@ Window
                     required property bool launchable
                     required property bool launching
                     required property int activeWindowIndex
+                    required property bool floating
                     required property int messageCount
                     required property bool separatorBefore
                     property real dragOffset: 0
@@ -725,6 +726,21 @@ Window
                             {
                                 contextMenu.close()
                                 dockModel.togglePinned(launcher.index)
+                            }
+                        }
+
+                        MenuItem
+                        {
+                            width: parent.width
+                            visible: launcher.running
+                            text: launcher.floating
+                                  ? i18n("Tile window")
+                                  : i18n("Untile window")
+                            icon.name: launcher.floating ? "window-pin" : "window-unpin"
+                            onTriggered:
+                            {
+                                contextMenu.close()
+                                dockModel.toggleFloating(launcher.index)
                             }
                         }
 

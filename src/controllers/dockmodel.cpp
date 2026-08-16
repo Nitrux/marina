@@ -238,6 +238,13 @@ QVariant DockModel::data(const QModelIndex &index, int role) const
                     return static_cast<int>(windowIndex);
             }
             return -1;
+        case FloatingRole:
+            for (const DockEntry::Window &window : entry.windows)
+            {
+                if (window.active)
+                    return window.floating;
+            }
+            return entry.windows.isEmpty() ? false : entry.windows.first().floating;
         case MessageCountRole:
             return m_messageCounts.value(entry.appId, 0);
         case LaunchingRole:
@@ -261,6 +268,7 @@ QHash<int, QByteArray> DockModel::roleNames() const
         {WindowCountRole, "windowCount"},
         {LaunchableRole, "launchable"},
         {ActiveWindowIndexRole, "activeWindowIndex"},
+        {FloatingRole, "floating"},
         {MessageCountRole, "messageCount"},
         {LaunchingRole, "launching"},
         {SeparatorRole, "separatorBefore"}
@@ -393,7 +401,7 @@ void DockModel::closeWindows(int row)
 
     const QList<DockEntry::Window> windows = m_entries.at(row).windows;
     static const QRegularExpression addressPattern(
-        QStringLiteral("^0x[0-9a-fA-F]+$"));
+        QStringLiteral("^0x[0-9a-fA-F]+\\z"));
     for (const DockEntry::Window &window : windows)
     {
         const QString address = window.address.trimmed();
@@ -434,6 +442,58 @@ void DockModel::closeWindows(int row)
     }
 
     QTimer::singleShot(300, this, &DockModel::refresh);
+}
+
+void DockModel::toggleFloating(int row)
+{
+    if (row < 0 || row >= m_entries.size() || m_hyprctlProgram.isEmpty())
+        return;
+
+    const DockEntry &entry = m_entries.at(row);
+    if (entry.windows.isEmpty())
+        return;
+
+    const DockEntry::Window *target = nullptr;
+    for (const DockEntry::Window &window : entry.windows)
+    {
+        if (window.active)
+        {
+            target = &window;
+            break;
+        }
+    }
+    if (!target)
+        target = &entry.windows.first();
+
+    static const QRegularExpression addressPattern(
+        QStringLiteral("^0x[0-9a-fA-F]+\\z"));
+    if (!addressPattern.match(target->address).hasMatch())
+        return;
+
+    auto *process = new QProcess(this);
+    process->setProgram(m_hyprctlProgram);
+    process->setArguments(
+        {QStringLiteral("dispatch"),
+         QStringLiteral("hl.dsp.window.float({ action = 'toggle', window = 'address:%1' })")
+             .arg(target->address)});
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    connect(process, &QProcess::readyReadStandardOutput, process, [process]() {
+        process->readAllStandardOutput();
+    });
+    connect(process,
+            qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+            process,
+            &QObject::deleteLater);
+    connect(process, &QProcess::errorOccurred, process, [process](QProcess::ProcessError) {
+        if (process->state() == QProcess::NotRunning)
+            process->deleteLater();
+    });
+    process->start(QIODevice::ReadOnly);
+    QTimer::singleShot(300, this, &DockModel::refresh);
+    QTimer::singleShot(kCompositorCommandTimeout, process, [process]() {
+        if (process->state() != QProcess::NotRunning)
+            process->kill();
+    });
 }
 
 void DockModel::togglePinned(int row)
@@ -1204,6 +1264,7 @@ void DockModel::rebuild(const QJsonArray &clients)
         DockEntry::Window window;
         window.address = clientAddress;
         window.active = clientAddress == m_activeWindowAddress;
+        window.floating = client.value(QStringLiteral("floating")).toBool();
         if (!window.address.isEmpty())
             entry.windows.append(window);
         entry.active = entry.active || window.active;
