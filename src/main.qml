@@ -261,13 +261,13 @@ Window
                         x:
                         {
                             const previous = launcherRepeater.itemAt(launcher.index - 1)
-                            const currentPoint = launcher.mapToItem(root.contentItem, 0, 0)
+                            const currentPoint = launcher.mapToItem(separatorLayer, 0, 0)
                             const previousPoint = previous
-                                    ? previous.mapToItem(root.contentItem, previous.width, 0)
+                                    ? previous.mapToItem(separatorLayer, previous.width, 0)
                                     : currentPoint
-                            return ((currentPoint.x + previousPoint.x) / 2) - separatorLayer.x - (width / 2)
+                            return ((currentPoint.x + previousPoint.x) / 2) - (width / 2)
                         }
-                        y: launcher.mapToItem(root.contentItem, 0, 0).y - separatorLayer.y + 10
+                        y: launcher.mapToItem(separatorLayer, 0, 0).y + 10
                         width: leftPadding + 1 + rightPadding
                         height: Math.max(1, launcher.height - 20)
                         z: 3
@@ -563,11 +563,7 @@ Window
                     id: popupAnchorMarker
 
                     x: Math.round((launcher.width - width) / 2)
-                    y:
-                    {
-                        const dockTopInLauncher = launcher.mapFromItem(root.contentItem, 0, 0)
-                        return dockTopInLauncher.y
-                    }
+                    y: 0
                     width: 1
                     height: 1
                     visible: true
@@ -612,9 +608,6 @@ Window
                     function dockOriginInScreen()
                     {
                         const geometry = screenGeometry()
-                        // Auto-hide keeps the surface anchored to the edge for
-                        // the whole animation; using root.height here makes the
-                        // popup origin oscillate as the surface is resized.
                         const bottomMargin = dockModel.autoHide
                                 ? 0
                                 : dockModel.edgeMargin
@@ -660,7 +653,7 @@ Window
                         const dockOrigin = dockOriginInScreen()
                         const dockTop = anchorPoint ? anchorPoint.y : 0
                         const originY = dockOrigin ? dockOrigin.y : geometry.y
-                        const minimumY = geometry.y - originY + 8
+                        const minimumY = geometry.y - originY
                         return Math.round(Math.max(minimumY, dockTop - height))
                     }
 
@@ -760,6 +753,7 @@ Window
             id: separatorLayer
 
             anchors.fill: dockViewport
+            transform: Translate { y: root.hiddenOffset }
             z: 4
             opacity: dockContent.opacity
         }
