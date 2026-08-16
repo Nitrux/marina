@@ -8,6 +8,7 @@
 #include <QLockFile>
 #include <QMargins>
 #include <QPointer>
+#include <QRegion>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQmlContext>
@@ -32,6 +33,38 @@
 
 namespace
 {
+class AutoHideInputController final : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit AutoHideInputController(QObject *parent = nullptr)
+        : QObject(parent)
+    {
+    }
+
+    Q_INVOKABLE void setInputRegion(QObject *windowObject, bool hidden)
+    {
+        auto *window = qobject_cast<QWindow *>(windowObject);
+        if (!window)
+            return;
+
+        if (hidden)
+        {
+            constexpr int revealStrip = 3;
+            window->setMask(QRegion(0,
+                                    qMax(0, window->height() - revealStrip),
+                                    window->width(),
+                                    revealStrip));
+        }
+        else
+        {
+            window->setMask(QRegion());
+        }
+    }
+
+};
+
 bool isUsableScreen(const QScreen *screen)
 {
     // Qt creates an unnamed placeholder QScreen while Wayland has no outputs.
@@ -71,8 +104,10 @@ void configureLayerShellWindow(QWindow *window, DockModel *model, bool activeScr
                                   : LayerShellQt::Window::LayerTop);
         layerWindow->setExclusiveZone(
             model->autoHide() ? 0 : model->dockHeight() + model->edgeMargin());
-        const bool collapsed = model->autoHide() && window->height() < model->dockHeight();
-        const int bottomMargin = collapsed ? 0 : model->edgeMargin();
+        // Keep the layer-shell origin fixed while the auto-hide animation changes
+        // the surface height. Deriving the margin from the intermediate height
+        // makes the surface jump between two origins on every animation frame.
+        const int bottomMargin = model->autoHide() ? 0 : model->edgeMargin();
         layerWindow->setMargins(QMargins(0, 0, 0, bottomMargin));
         layerWindow->setDesiredSize(window->size());
     };
@@ -152,9 +187,12 @@ int main(int argc, char *argv[])
     MauiApp::instance()->setIconName(QStringLiteral("user-desktop"));
 
     DockModel dockModel;
+    AutoHideInputController autoHideInputController;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextObject(new KLocalizedContext(&engine));
     engine.rootContext()->setContextProperty(QStringLiteral("dockModel"), &dockModel);
+    engine.rootContext()->setContextProperty(QStringLiteral("autoHideInputController"),
+                                              &autoHideInputController);
 
     QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/app/marina/main.qml")));
     if (component.isError())
@@ -311,3 +349,5 @@ int main(int argc, char *argv[])
 
     return application.exec();
 }
+
+#include "main.moc"

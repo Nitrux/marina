@@ -27,9 +27,10 @@ Window
                  dockModel.dockWidth > 0
                  ? Math.max(dockModel.dockWidth, naturalWidth)
                  : naturalWidth)
-    property real presentationHeight: dockExpanded
-                                      ? dockModel.dockHeight
-                                      : collapsedHeight
+    readonly property int expandedHeight: dockModel.dockHeight
+                                               + (dockModel.autoHide ? dockModel.edgeMargin : 0)
+    property real hiddenOffset: dockExpanded ? 0 : expandedHeight
+    property real presentationHeight: expandedHeight
 
 
     visible: false
@@ -43,18 +44,54 @@ Window
     flags: Qt.FramelessWindowHint | Qt.Tool | Qt.WindowDoesNotAcceptFocus
     title: i18n("Marina")
 
+    Component.onCompleted:
+    {
+        root.contentItem.clip = true
+        autoHideInputController.setInputRegion(root, false)
+        if (dockModel.autoHide && !dockHover.hovered)
+            hideTimer.restart()
+    }
+
+    onWidthChanged: if (!dockExpanded && dockModel.autoHide)
+        autoHideInputController.setInputRegion(root, true)
+
+    onHeightChanged: if (!dockExpanded && dockModel.autoHide)
+        autoHideInputController.setInputRegion(root, true)
+
     onTransientSurfaceCountChanged:
     {
         if (transientSurfaceCount > 0)
+        {
             autoHideExpanded = true
+            hideTimer.stop()
+        }
+        else if (dockModel.autoHide && autoHideExpanded && !dockHover.hovered)
+        {
+            hideTimer.restart()
+        }
     }
 
-    Behavior on presentationHeight
+    Behavior on hiddenOffset
     {
         NumberAnimation
         {
             duration: 140
             easing.type: Easing.OutCubic
+            onRunningChanged:
+            {
+                if (!running && !root.dockExpanded)
+                {
+                    autoHideInputController.setInputRegion(root, true)
+                }
+            }
+        }
+    }
+
+    onDockExpandedChanged:
+    {
+        if (dockExpanded)
+        {
+            autoHideInputController.setInputRegion(root, false)
         }
     }
 
@@ -65,7 +102,17 @@ Window
         onHoveredChanged:
         {
             if (hovered)
+            {
                 root.autoHideExpanded = true
+                autoHideInputController.setInputRegion(root, false)
+                hideTimer.stop()
+            }
+            else if (dockModel.autoHide
+                     && root.autoHideExpanded
+                     && root.transientSurfaceCount === 0)
+            {
+                hideTimer.restart()
+            }
         }
     }
 
@@ -73,11 +120,17 @@ Window
     {
         id: hideTimer
         interval: dockModel.autoHideDelay
-        running: dockModel.autoHide
-                 && root.autoHideExpanded
-                 && root.transientSurfaceCount === 0
-                 && !dockHover.hovered
-        onTriggered: root.autoHideExpanded = false
+        running: false
+        onTriggered:
+        {
+            if (dockModel.autoHide
+                && root.autoHideExpanded
+                && root.transientSurfaceCount === 0
+                && !dockHover.hovered)
+            {
+                root.autoHideExpanded = false
+            }
+        }
     }
 
     Connections
@@ -87,13 +140,21 @@ Window
         function onAutoHideChanged()
         {
             root.autoHideExpanded = true
+            autoHideInputController.setInputRegion(root, false)
+            hideTimer.stop()
+            if (dockModel.autoHide && !dockHover.hovered)
+                hideTimer.restart()
         }
     }
 
     Maui.WindowBlur
     {
         view: root
-        geometry: Qt.rect(0, 0, root.width, root.height)
+        geometry: Qt.rect(0, 0, root.width,
+                         Math.max(1, root.height
+                                  - (root.dockExpanded && dockModel.autoHide
+                                     ? dockModel.edgeMargin
+                                     : 0)))
         windowRadius: Maui.Style.radiusV + 6
         enabled: true
     }
@@ -101,10 +162,14 @@ Window
     Rectangle
     {
         anchors.fill: parent
-        opacity: root.dockExpanded ? 1 : 0
+        opacity: 1
+        transform: Translate { y: root.hiddenOffset }
         color: Qt.alpha(Maui.Theme.backgroundColor, 0.82)
         border.color: Qt.alpha(Maui.Theme.textColor, 0.14)
         border.width: 1
+        anchors.bottomMargin: root.dockExpanded && dockModel.autoHide
+                             ? dockModel.edgeMargin
+                             : 0
         radius: Maui.Style.radiusV + 6
 
         Behavior on opacity { NumberAnimation { duration: 100 } }
@@ -115,8 +180,12 @@ Window
         id: dockViewport
 
         anchors.fill: parent
+        transform: Translate { y: root.hiddenOffset }
         anchors.leftMargin: 10
         anchors.rightMargin: 10
+        anchors.bottomMargin: root.dockExpanded && dockModel.autoHide
+                              ? dockModel.edgeMargin
+                              : 0
         clip: true
         contentWidth: Math.max(width,
                                dockContent.implicitWidth + (root.launcherHoverInset * 2))
@@ -141,7 +210,7 @@ Window
             y: Math.round((dockViewport.height - implicitHeight) / 2)
             spacing: Maui.Style.space.small
             enabled: root.dockExpanded
-            opacity: root.dockExpanded ? 1 : 0
+            opacity: 1
 
             Behavior on opacity { NumberAnimation { duration: 100 } }
 
@@ -543,7 +612,10 @@ Window
                     function dockOriginInScreen()
                     {
                         const geometry = screenGeometry()
-                        const bottomMargin = root.height < dockModel.dockHeight
+                        // Auto-hide keeps the surface anchored to the edge for
+                        // the whole animation; using root.height here makes the
+                        // popup origin oscillate as the surface is resized.
+                        const bottomMargin = dockModel.autoHide
                                 ? 0
                                 : dockModel.edgeMargin
                         return Qt.point(geometry.x + ((geometry.width - root.width) / 2),
