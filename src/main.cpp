@@ -102,8 +102,9 @@ void configureLayerShellWindow(QWindow *window, DockModel *model, bool activeScr
         layerWindow->setLayer(model->showAboveFullscreen()
                                   ? LayerShellQt::Window::LayerOverlay
                                   : LayerShellQt::Window::LayerTop);
+        // Layer-shell includes the anchored bottom margin in the reserved area.
         layerWindow->setExclusiveZone(
-            model->autoHide() ? 0 : model->dockHeight() + model->edgeMargin());
+            model->autoHide() ? 0 : model->dockHeight());
         // Keep the layer-shell origin fixed while the auto-hide animation changes
         // the surface height. Deriving the margin from the intermediate height
         // makes the surface jump between two origins on every animation frame.
