@@ -102,6 +102,7 @@ GlobalShortcutController::GlobalShortcutController(DockModel *model, QObject *pa
     , m_manager(new Private::GlobalShortcutManager)
 {
     m_manager->setParent(this);
+    m_launcherShortcutsEnabled = model ? model->launcherShortcutsEnabled() : true;
     m_holdTimer.setTimerType(Qt::PreciseTimer);
     m_holdTimer.setSingleShot(true);
     m_holdTimer.setInterval(model ? model->launcherHoldDelay() : kDefaultLauncherHoldDelay);
@@ -110,6 +111,28 @@ GlobalShortcutController::GlobalShortcutController(DockModel *model, QObject *pa
     m_launcherModeTimer.setInterval(model ? model->launcherModeDuration() : kDefaultLauncherModeDuration);
     if (model)
     {
+        connect(model, &DockModel::launcherShortcutsEnabledChanged, this, [this, model]() {
+            const bool enabled = model->launcherShortcutsEnabled();
+            if (m_launcherShortcutsEnabled == enabled)
+                return;
+
+            m_launcherShortcutsEnabled = enabled;
+            if (enabled)
+            {
+                registerShortcuts();
+                return;
+            }
+
+            const bool launcherModeWasActive = m_launcherMode;
+            m_holdTimer.stop();
+            m_launcherModeTimer.stop();
+            m_superHeld = false;
+            m_launcherMode = false;
+            if (m_holdShortcut)
+                m_holdShortcut->resetPressed();
+            if (launcherModeWasActive)
+                emit launcherModeChanged(false);
+        });
         connect(model, &DockModel::launcherHoldDelayChanged, this, [this, model]() {
             m_holdTimer.setInterval(model->launcherHoldDelay());
         });
@@ -127,7 +150,7 @@ GlobalShortcutController::GlobalShortcutController(DockModel *model, QObject *pa
         });
     }
     connect(&m_holdTimer, &QTimer::timeout, this, [this]() {
-        if (!m_superHeld)
+        if (!m_launcherShortcutsEnabled || !m_superHeld)
             return;
 
         m_launcherMode = true;
@@ -135,7 +158,7 @@ GlobalShortcutController::GlobalShortcutController(DockModel *model, QObject *pa
         m_launcherModeTimer.start();
     });
     connect(&m_launcherModeTimer, &QTimer::timeout, this, [this]() {
-        if (!m_launcherMode)
+        if (!m_launcherShortcutsEnabled || !m_launcherMode)
             return;
 
         m_launcherMode = false;
@@ -155,6 +178,9 @@ GlobalShortcutController::GlobalShortcutController(DockModel *model, QObject *pa
 
 void GlobalShortcutController::handleSuperPressed()
 {
+    if (!m_launcherShortcutsEnabled)
+        return;
+
     qCDebug(marinaShortcutsLog)
         << "controller Super pressed" << "superHeld=" << m_superHeld
         << "launcherMode=" << m_launcherMode;
@@ -170,6 +196,9 @@ void GlobalShortcutController::handleSuperPressed()
 
 void GlobalShortcutController::handleSuperReleased()
 {
+    if (!m_launcherShortcutsEnabled)
+        return;
+
     qCDebug(marinaShortcutsLog)
         << "controller Super released" << "superHeld=" << m_superHeld
         << "launcherMode=" << m_launcherMode;
@@ -187,6 +216,9 @@ void GlobalShortcutController::handleSuperReleased()
 
 void GlobalShortcutController::handleLauncherPressed(int index)
 {
+    if (!m_launcherShortcutsEnabled)
+        return;
+
     qCDebug(marinaShortcutsLog)
         << "controller launcher pressed" << "index=" << index
         << "superHeld=" << m_superHeld
@@ -200,7 +232,7 @@ void GlobalShortcutController::registerShortcuts()
     qCDebug(marinaShortcutsLog)
         << "registerShortcuts" << "registered=" << m_registered
         << "active=" << m_manager->isActive();
-    if (m_registered || !m_manager->isActive())
+    if (!m_launcherShortcutsEnabled || m_registered || !m_manager->isActive())
     {
         qCDebug(marinaShortcutsLog) << "shortcut registration skipped";
         return;

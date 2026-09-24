@@ -323,6 +323,11 @@ int DockModel::launcherModeDuration() const
     return m_launcherModeDuration;
 }
 
+bool DockModel::launcherShortcutsEnabled() const
+{
+    return m_launcherShortcutsEnabled;
+}
+
 bool DockModel::showAboveFullscreen() const
 {
     return m_showAboveFullscreen;
@@ -701,6 +706,8 @@ void DockModel::initializeSettings()
         settings.setValue(QStringLiteral("Behavior/launcherHoldDelay"), 3000);
     if (!settings.contains(QStringLiteral("Behavior/launcherModeDuration")))
         settings.setValue(QStringLiteral("Behavior/launcherModeDuration"), 1000);
+    if (!settings.contains(QStringLiteral("Behavior/launcherShortcutsEnabled")))
+        settings.setValue(QStringLiteral("Behavior/launcherShortcutsEnabled"), true);
     settings.remove(QStringLiteral("Behavior/currentWorkspaceOnly"));
     settings.sync();
 
@@ -778,6 +785,8 @@ void DockModel::reloadSettings()
         0,
         settings.value(QStringLiteral("Behavior/launcherModeDuration"), 1000).toInt(),
         10000);
+    const bool launcherShortcutsEnabled =
+        settings.value(QStringLiteral("Behavior/launcherShortcutsEnabled"), true).toBool();
     QStringList pinnedIds =
         settings.value(QStringLiteral("Launchers/pinned")).toStringList();
     pinnedIds.removeDuplicates();
@@ -831,6 +840,11 @@ void DockModel::reloadSettings()
     {
         m_launcherModeDuration = launcherModeDuration;
         emit launcherModeDurationChanged();
+    }
+    if (m_launcherShortcutsEnabled != launcherShortcutsEnabled)
+    {
+        m_launcherShortcutsEnabled = launcherShortcutsEnabled;
+        emit launcherShortcutsEnabledChanged();
     }
     if (m_pinnedIds != pinnedIds)
     {

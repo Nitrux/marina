@@ -40,6 +40,7 @@ private:
     bool m_registered = false;
     bool m_superHeld = false;
     bool m_launcherMode = false;
+    bool m_launcherShortcutsEnabled = true;
     QTimer m_holdTimer;
     QTimer m_launcherModeTimer;
 };
