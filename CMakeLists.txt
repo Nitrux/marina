@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(marina VERSION 0.1.0 LANGUAGES CXX)
+project(marina VERSION 0.1.0 LANGUAGES C CXX)
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(FATAL_ERROR "Marina supports Linux builds only.")
@@ -33,11 +33,12 @@ if(NOT CMAKE_CROSSCOMPILING
 endif()
 
 find_package(Qt6 ${REQUIRED_QT_VERSION} REQUIRED NO_MODULE
-    COMPONENTS Core DBus Gui Network Qml Quick QuickControls2)
+    COMPONENTS Core DBus Gui Network Qml Quick QuickControls2 WaylandClient)
 find_package(KF6CoreAddons ${REQUIRED_KF_VERSION} REQUIRED)
 find_package(KF6I18n ${REQUIRED_KF_VERSION} REQUIRED)
 find_package(MauiKit4 ${REQUIRED_MAUIKIT_VERSION} REQUIRED)
 find_package(LayerShellQt 6.0 REQUIRED)
+find_package(Wayland REQUIRED COMPONENTS Client)
 
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/org.maui.marina.desktop.in"

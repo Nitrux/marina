@@ -31,6 +31,9 @@ Window
                                                + (dockModel.autoHide ? dockModel.edgeMargin : 0)
     property real hiddenOffset: dockExpanded ? 0 : expandedHeight
     property real presentationHeight: expandedHeight
+    readonly property int launcherShortcutCount: 10
+    property bool launcherShortcutMode: false
+    property bool launcherShortcutWasHidden: false
 
 
     visible: false
@@ -65,7 +68,10 @@ Window
             autoHideExpanded = true
             hideTimer.stop()
         }
-        else if (dockModel.autoHide && autoHideExpanded && !dockHover.hovered)
+        else if (dockModel.autoHide
+                 && autoHideExpanded
+                 && !dockHover.hovered
+                 && !root.launcherShortcutMode)
         {
             hideTimer.restart()
         }
@@ -109,7 +115,8 @@ Window
             }
             else if (dockModel.autoHide
                      && root.autoHideExpanded
-                     && root.transientSurfaceCount === 0)
+                     && root.transientSurfaceCount === 0
+                     && !root.launcherShortcutMode)
             {
                 hideTimer.restart()
             }
@@ -135,6 +142,37 @@ Window
 
     Connections
     {
+        target: globalShortcutController
+
+        function onLauncherModeChanged(active)
+        {
+            root.launcherShortcutMode = active
+            if (active)
+            {
+                root.launcherShortcutWasHidden = !root.dockExpanded
+                root.autoHideExpanded = true
+                hideTimer.stop()
+                autoHideInputController.setInputRegion(root, false)
+            }
+            else if (root.launcherShortcutWasHidden
+                     && dockModel.autoHide
+                     && root.transientSurfaceCount === 0)
+            {
+                root.autoHideExpanded = false
+            }
+            else if (dockModel.autoHide
+                     && root.transientSurfaceCount === 0
+                     && !dockHover.hovered)
+            {
+                hideTimer.restart()
+            }
+
+            root.launcherShortcutWasHidden = false
+        }
+    }
+
+    Connections
+    {
         target: dockModel
 
         function onAutoHideChanged()
@@ -142,7 +180,9 @@ Window
             root.autoHideExpanded = true
             autoHideInputController.setInputRegion(root, false)
             hideTimer.stop()
-            if (dockModel.autoHide && !dockHover.hovered)
+            if (dockModel.autoHide
+                && !dockHover.hovered
+                && !root.launcherShortcutMode)
                 hideTimer.restart()
         }
     }
@@ -243,6 +283,15 @@ Window
                         pointer.containsMouse && !hoverSuppressed
                     readonly property bool showMessageBadge:
                         pinned && messageCount > 0
+                    readonly property bool showLauncherShortcutBadge:
+                        root.launcherShortcutMode
+                        && pinned
+                        && launchable
+                        && index < root.launcherShortcutCount
+                    readonly property string launcherShortcutLabel:
+                        index === root.launcherShortcutCount - 1
+                        ? "0"
+                        : String(index + 1)
 
                     readonly property real separatorBuffer:
                         separatorBefore && index > 0 ? Maui.Style.space.small : 0
@@ -307,6 +356,7 @@ Window
 
                 Maui.IconItem
                 {
+                    id: launcherIcon
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.verticalCenterOffset: launcher.running ? -2 : 0
@@ -315,6 +365,21 @@ Window
                     iconSource: launcher.iconName
                     iconSizeHint: dockModel.iconSize
                     color: Maui.Theme.textColor
+                }
+
+                Maui.Badge
+                {
+                    id: launcherShortcutBadge
+
+                    anchors.centerIn: launcherIcon
+                    visible: launcher.showLauncherShortcutBadge
+                    enabled: false
+                    z: 4
+                    text: launcher.launcherShortcutLabel
+                    font.weight: Font.Bold
+                    flat: true
+                    color: Maui.Theme.highlightColor
+                    Maui.Controls.status: Maui.Controls.Normal
                 }
 
                 Item

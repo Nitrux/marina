@@ -16,7 +16,6 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QImageReader>
-#include <QLoggingCategory>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
@@ -24,8 +23,6 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QUrl>
-
-Q_LOGGING_CATEGORY(marinaDockLog, "marina.dock")
 
 namespace
 {
@@ -316,6 +313,16 @@ int DockModel::autoHideDelay() const
     return m_autoHideDelay;
 }
 
+int DockModel::launcherHoldDelay() const
+{
+    return m_launcherHoldDelay;
+}
+
+int DockModel::launcherModeDuration() const
+{
+    return m_launcherModeDuration;
+}
+
 bool DockModel::showAboveFullscreen() const
 {
     return m_showAboveFullscreen;
@@ -393,6 +400,14 @@ void DockModel::launchNew(int row)
     const DockEntry entry = m_entries.at(row);
     if (!launch(entry))
         emit launchFailed(entry.name);
+}
+
+void DockModel::launchPinnedNew(int row)
+{
+    if (row < 0 || row >= m_entries.size() || !m_entries.at(row).pinned)
+        return;
+
+    launchNew(row);
 }
 
 void DockModel::closeWindows(int row)
@@ -682,6 +697,10 @@ void DockModel::initializeSettings()
         settings.setValue(QStringLiteral("Behavior/autoHide"), false);
     if (!settings.contains(QStringLiteral("Behavior/autoHideDelay")))
         settings.setValue(QStringLiteral("Behavior/autoHideDelay"), 650);
+    if (!settings.contains(QStringLiteral("Behavior/launcherHoldDelay")))
+        settings.setValue(QStringLiteral("Behavior/launcherHoldDelay"), 3000);
+    if (!settings.contains(QStringLiteral("Behavior/launcherModeDuration")))
+        settings.setValue(QStringLiteral("Behavior/launcherModeDuration"), 1000);
     settings.remove(QStringLiteral("Behavior/currentWorkspaceOnly"));
     settings.sync();
 
@@ -751,6 +770,14 @@ void DockModel::reloadSettings()
         0,
         settings.value(QStringLiteral("Behavior/autoHideDelay"), 650).toInt(),
         5000);
+    const int launcherHoldDelay = qBound(
+        0,
+        settings.value(QStringLiteral("Behavior/launcherHoldDelay"), 3000).toInt(),
+        10000);
+    const int launcherModeDuration = qBound(
+        0,
+        settings.value(QStringLiteral("Behavior/launcherModeDuration"), 1000).toInt(),
+        10000);
     QStringList pinnedIds =
         settings.value(QStringLiteral("Launchers/pinned")).toStringList();
     pinnedIds.removeDuplicates();
@@ -794,6 +821,16 @@ void DockModel::reloadSettings()
     {
         m_autoHideDelay = autoHideDelay;
         emit autoHideDelayChanged();
+    }
+    if (m_launcherHoldDelay != launcherHoldDelay)
+    {
+        m_launcherHoldDelay = launcherHoldDelay;
+        emit launcherHoldDelayChanged();
+    }
+    if (m_launcherModeDuration != launcherModeDuration)
+    {
+        m_launcherModeDuration = launcherModeDuration;
+        emit launcherModeDurationChanged();
     }
     if (m_pinnedIds != pinnedIds)
     {
@@ -915,6 +952,12 @@ void DockModel::handleEventLine(const QByteArray &line)
             QTimer::singleShot(200, this, &DockModel::refresh);
             return;
         }
+    }
+
+    if (eventName == QByteArrayLiteral("workspace")
+        || eventName == QByteArrayLiteral("workspacev2"))
+    {
+        emit workspaceChanged();
     }
 
     if (relevantEvents.contains(eventName))
@@ -1229,11 +1272,6 @@ void DockModel::rebuild(const QJsonArray &clients)
             appId = desktopIdForWindowClass(processName);
         if (appId.isEmpty())
             appId = normalizedId(windowClass);
-        qCDebug(marinaDockLog).noquote()
-            << "foreign toplevel app_id/class=" << windowClass
-            << "initialClass=" << client.value(QStringLiteral("initialClass")).toString().trimmed()
-            << "process=" << processName
-            << "resolvedDesktopId=" << appId;
         if (appId.isEmpty())
             continue;
 

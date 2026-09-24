@@ -1,11 +1,18 @@
 set(marina_SRCS
     main.cpp
     controllers/dockmodel.cpp
-    controllers/dockmodel.h)
+    controllers/dockmodel.h
+    controllers/globalshortcuts.cpp
+    controllers/globalshortcuts.h)
 
 qt_add_executable(${PROJECT_NAME}
     MANUAL_FINALIZATION
     ${marina_SRCS})
+
+qt_generate_wayland_protocol_client_sources(${PROJECT_NAME}
+    PRIVATE_CODE
+    FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/protocols/hyprland-global-shortcuts-v1.xml")
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -32,13 +39,15 @@ target_link_libraries(${PROJECT_NAME}
         KF6::CoreAddons
         KF6::I18n
         LayerShellQt::Interface
+        Wayland::Client
         Qt6::Core
         Qt6::DBus
         Qt6::Gui
         Qt6::Network
         Qt6::Qml
         Qt6::Quick
-        Qt6::QuickControls2)
+        Qt6::QuickControls2
+        Qt6::WaylandClient)
 
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 

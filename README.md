@@ -11,6 +11,7 @@ Marina is a QML-based workspace dock designed for Nitrux. Built with MauiKit and
 * Hyprland integration to track, group, and cycle through open windows across all workspaces using event-driven updates.
 * Automatic XDG launcher discovery, drag-to-reorder pinning, horizontal scrolling, optional auto-hide, and standard mouse-click controls.
 * Unread-message badges for pinned applications that publish launcher-entry counts, including compatible messaging clients.
+* Easy launcher selection for pinned apps using shortcuts.
 
 ## Requirements
 

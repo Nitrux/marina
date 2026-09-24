@@ -25,6 +25,8 @@ class DockModel final : public QAbstractListModel
     Q_PROPERTY(QString configFile READ configFile CONSTANT)
     Q_PROPERTY(bool autoHide READ autoHide NOTIFY autoHideChanged)
     Q_PROPERTY(int autoHideDelay READ autoHideDelay NOTIFY autoHideDelayChanged)
+    Q_PROPERTY(int launcherHoldDelay READ launcherHoldDelay NOTIFY launcherHoldDelayChanged)
+    Q_PROPERTY(int launcherModeDuration READ launcherModeDuration NOTIFY launcherModeDurationChanged)
     Q_PROPERTY(bool showAboveFullscreen READ showAboveFullscreen NOTIFY showAboveFullscreenChanged)
     Q_PROPERTY(bool fullscreenActive READ fullscreenActive NOTIFY fullscreenActiveChanged)
     Q_PROPERTY(bool compositorAvailable READ compositorAvailable NOTIFY compositorAvailableChanged)
@@ -62,6 +64,8 @@ public:
     QString configFile() const;
     bool autoHide() const;
     int autoHideDelay() const;
+    int launcherHoldDelay() const;
+    int launcherModeDuration() const;
     bool showAboveFullscreen() const;
     bool fullscreenActive() const;
     bool fullscreenActiveOnScreen(const QString &screenName) const;
@@ -69,6 +73,7 @@ public:
 
     Q_INVOKABLE void trigger(int row);
     Q_INVOKABLE void launchNew(int row);
+    Q_INVOKABLE void launchPinnedNew(int row);
     Q_INVOKABLE void closeWindows(int row);
     Q_INVOKABLE void toggleFloating(int row);
     Q_INVOKABLE void togglePinned(int row);
@@ -83,9 +88,12 @@ signals:
     void screenPlacementChanged();
     void autoHideChanged();
     void autoHideDelayChanged();
+    void launcherHoldDelayChanged();
+    void launcherModeDurationChanged();
     void showAboveFullscreenChanged();
     void compositorAvailableChanged();
     void fullscreenActiveChanged();
+    void workspaceChanged();
     void launchFailed(const QString &applicationName);
 
 private slots:
@@ -167,6 +175,8 @@ private:
     QString m_screenPlacement = QStringLiteral("all");
     bool m_autoHide = false;
     int m_autoHideDelay = 650;
+    int m_launcherHoldDelay = 3000;
+    int m_launcherModeDuration = 1000;
     bool m_showAboveFullscreen = false;
     bool m_fullscreenActive = false;
     bool m_compositorAvailable = false;

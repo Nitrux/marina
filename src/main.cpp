@@ -6,6 +6,7 @@
 #include <QGuiApplication>
 #include <QHash>
 #include <QIcon>
+#include <QLoggingCategory>
 #include <QLockFile>
 #include <QMargins>
 #include <QPointer>
@@ -31,6 +32,7 @@
 #include <MauiKit4/Core/mauiapp.h>
 
 #include "controllers/dockmodel.h"
+#include "controllers/globalshortcuts.h"
 
 namespace
 {
@@ -134,6 +136,7 @@ int main(int argc, char *argv[])
     QSurfaceFormat format;
     format.setAlphaBufferSize(8);
     QSurfaceFormat::setDefaultFormat(format);
+    QLoggingCategory::setFilterRules(QStringLiteral("*.debug=false\nmarina.shortcuts.debug=true"));
     QGuiApplication application(argc, argv);
     application.setQuitOnLastWindowClosed(false);
     application.setApplicationName(QStringLiteral("marina"));
@@ -189,10 +192,18 @@ int main(int argc, char *argv[])
     MauiApp::instance()->setIconName(QStringLiteral("user-desktop"));
 
     DockModel dockModel;
+    Marina::GlobalShortcutController globalShortcutController(&dockModel);
     AutoHideInputController autoHideInputController;
     QQmlApplicationEngine engine;
+    QObject::connect(&globalShortcutController,
+                     &Marina::GlobalShortcutController::launcherPressed,
+                     &dockModel,
+                     [&dockModel](int index) { dockModel.launchPinnedNew(index); });
+
     engine.rootContext()->setContextObject(new KLocalizedContext(&engine));
     engine.rootContext()->setContextProperty(QStringLiteral("dockModel"), &dockModel);
+    engine.rootContext()->setContextProperty(QStringLiteral("globalShortcutController"),
+                                              &globalShortcutController);
     engine.rootContext()->setContextProperty(QStringLiteral("autoHideInputController"),
                                               &autoHideInputController);
 
