@@ -26,13 +26,13 @@ $APT_COMMAND install -y --no-install-recommends \
     automake \
     autotools-dev \
     build-essential \
-    checkinstall \
     clang \
-    cmake \
+    meson \
+    ninja-build \
+    pkg-config \
     curl \
     devscripts \
     equivs \
-    extra-cmake-modules \
     gettext \
     gnupg2 \
     libkf6coreaddons-dev \
@@ -42,6 +42,7 @@ $APT_COMMAND install -y --no-install-recommends \
     liblayershellqtinterface-dev \
     lintian \
     qt6-base-dev \
+    qt6-base-dev-tools \
     qt6-declarative-dev \
     qt6-svg-dev \
     qt6-wayland-dev

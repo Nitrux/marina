@@ -14,7 +14,7 @@ set(CMAKE_AUTORCC ON)
 
 set(REQUIRED_QT_VERSION 6.10)
 set(REQUIRED_KF_VERSION 6.13.0)
-set(REQUIRED_MAUIKIT_VERSION 4.0.4)
+set(REQUIRED_MAUIKIT_VERSION 4.0.5)
 
 include(CheckCXXCompilerFlag)
 include(FeatureSummary)

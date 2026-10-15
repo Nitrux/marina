@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/app/marina">
+        <file>main.qml</file>
+    </qresource>
+</RCC>

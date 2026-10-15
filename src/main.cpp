@@ -25,7 +25,7 @@
 #include <utility>
 
 #include <KAboutData>
-#include <KLocalizedContext>
+#include <KLocalizedQmlContext>
 #include <KLocalizedString>
 
 #include <LayerShellQt/Window>
@@ -200,7 +200,7 @@ int main(int argc, char *argv[])
                      &dockModel,
                      [&dockModel](int index) { dockModel.launchPinnedNew(index); });
 
-    engine.rootContext()->setContextObject(new KLocalizedContext(&engine));
+    engine.rootContext()->setContextObject(new KLocalizedQmlContext(&engine));
     engine.rootContext()->setContextProperty(QStringLiteral("dockModel"), &dockModel);
     engine.rootContext()->setContextProperty(QStringLiteral("globalShortcutController"),
                                               &globalShortcutController);
