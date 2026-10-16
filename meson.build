@@ -17,7 +17,7 @@ cpp_args = []
 if host_machine.cpu_family() == 'x86_64'
     cpp_args += ['-march=x86-64-v3']
 endif
-qtwaylandscanner = find_program('qtwaylandscanner')
+qtwaylandscanner = find_program('qtwaylandscanner', dirs: ['/usr/lib/qt6/libexec', '/usr/lib/qt6/bin'])
 wayland_scanner = find_program('wayland-scanner')
 wayland_protocol = 'src/protocols/hyprland-global-shortcuts-v1.xml'
 wayland_client_header = custom_target(
