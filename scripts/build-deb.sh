@@ -32,7 +32,7 @@ Priority: optional
 Architecture: ${TARGET_ARCH}
 Maintainer: uri_herrera@nxos.org
 Provides: marina
-Depends: hyprland,layer-shell-qt,libqt6svg6,mauikit (>= 4.0.5)
+Depends: hyprland,layer-shell-qt,libqt6svg6,mauikit (>= 4.0.5),qml6-module-qtquick,qml6-module-qtquick-controls,qml6-module-qtquick-layouts,qml6-module-qtquick-window
 Description: marina
  marina
 CONTROL
