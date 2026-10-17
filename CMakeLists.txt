@@ -20,6 +20,9 @@ include(CheckCXXCompilerFlag)
 include(FeatureSummary)
 include(GNUInstallDirs)
 
+find_package(ECM ${REQUIRED_KF_VERSION} REQUIRED NO_MODULE)
+set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH} ${CMAKE_MODULE_PATH})
+
 string(TOLOWER "${CMAKE_HOST_SYSTEM_PROCESSOR}" MARINA_HOST_PROCESSOR)
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" MARINA_TARGET_PROCESSOR)
 
@@ -31,6 +34,9 @@ if(NOT CMAKE_CROSSCOMPILING
         add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-march=x86-64-v3>)
     endif()
 endif()
+
+set(QT_NO_PRIVATE_MODULE_WARNING ON CACHE BOOL
+    "MauiKit uses Qt's private WaylandClient API" FORCE)
 
 find_package(Qt6 ${REQUIRED_QT_VERSION} REQUIRED NO_MODULE
     COMPONENTS Core DBus Gui Network Qml Quick QuickControls2 WaylandClient)

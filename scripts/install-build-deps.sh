@@ -6,7 +6,7 @@
 
 # -- Exit on errors.
 
-set -e
+set -euo pipefail
 
 
 # -- Check if running as root.
@@ -26,9 +26,9 @@ $APT_COMMAND install -y --no-install-recommends \
     automake \
     autotools-dev \
     build-essential \
+    cmake \
+    extra-cmake-modules \
     clang \
-    meson \
-    ninja-build \
     pkg-config \
     curl \
     devscripts \
