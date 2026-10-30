@@ -204,7 +204,9 @@ Window
         anchors.fill: parent
         opacity: 1
         transform: Translate { y: root.hiddenOffset }
-        color: Qt.alpha(Maui.Theme.backgroundColor, 0.82)
+        Maui.Theme.colorSet: Maui.Theme.Header
+        Maui.Theme.inherit: false
+        color: Qt.alpha(Maui.Theme.backgroundColor, 0.76)
         border.color: Qt.alpha(Maui.Theme.textColor, 0.14)
         border.width: 1
         anchors.bottomMargin: root.dockExpanded && dockModel.autoHide
