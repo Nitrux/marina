@@ -659,7 +659,8 @@ Window
                     flags: Qt.FramelessWindowHint | Qt.Popup
                     transientParent: root
                     title: i18n("%1 actions", launcher.name)
-                    Maui.Theme.colorSet: Maui.Theme.View
+                    Maui.Theme.colorSet: Maui.Theme.Window
+                    Maui.Theme.inherit: false
 
                     function anchorPointInDock()
                     {
@@ -722,7 +723,7 @@ Window
                         const dockTop = anchorPoint ? anchorPoint.y : 0
                         const originY = dockOrigin ? dockOrigin.y : geometry.y
                         const minimumY = geometry.y - originY
-                        return Math.round(Math.max(minimumY, dockTop - height))
+                        return Math.round(Math.max(minimumY, dockTop - height - 3))
                     }
 
                     function openFromLauncher()
@@ -753,8 +754,8 @@ Window
                     Rectangle
                     {
                         anchors.fill: parent
-                        color: Qt.alpha(Maui.Theme.backgroundColor, 0.76)
-                        border.color: Qt.alpha(Maui.Theme.textColor, 0.10)
+                        color: contextMenu.Maui.Theme.backgroundColor
+                        border.color: contextMenu.Maui.Theme.alternateBackgroundColor
                         border.width: 1
                         radius: Maui.Style.radiusV
                     }
@@ -772,7 +773,7 @@ Window
                         MenuItem
                         {
                             width: parent.width
-                            text: i18n("Open new window")
+                            text: i18n("Open New Window")
                             icon.name: "window-new"
                             enabled: launcher.launchable
                             onTriggered:
@@ -786,8 +787,8 @@ Window
                         {
                             width: parent.width
                             text: launcher.pinned
-                                  ? i18n("Unpin launcher")
-                                  : i18n("Pin launcher")
+                                  ? i18n("Unpin Launcher")
+                                  : i18n("Pin Launcher")
                             icon.name: launcher.pinned ? "window-unpin" : "window-pin"
                             onTriggered:
                             {
@@ -801,8 +802,8 @@ Window
                             width: parent.width
                             visible: launcher.running
                             text: launcher.floating
-                                  ? i18n("Tile window")
-                                  : i18n("Untile window")
+                                  ? i18n("Tile Window")
+                                  : i18n("Untile Window")
                             icon.name: launcher.floating ? "window-pin" : "window-unpin"
                             onTriggered:
                             {

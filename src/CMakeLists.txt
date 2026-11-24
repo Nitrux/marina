@@ -55,9 +55,9 @@ install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 qt_finalize_target(${PROJECT_NAME})
 
 target_precompile_headers(${PROJECT_NAME} PRIVATE
-    <QDebug>
-    <QFileInfo>
-    <QGuiApplication>
-    <QQmlEngine>
-    <QQuickWindow>
+    "$<$<COMPILE_LANGUAGE:CXX>:<QDebug$<ANGLE-R>>"
+    "$<$<COMPILE_LANGUAGE:CXX>:<QFileInfo$<ANGLE-R>>"
+    "$<$<COMPILE_LANGUAGE:CXX>:<QGuiApplication$<ANGLE-R>>"
+    "$<$<COMPILE_LANGUAGE:CXX>:<QQmlEngine$<ANGLE-R>>"
+    "$<$<COMPILE_LANGUAGE:CXX>:<QQuickWindow$<ANGLE-R>>"
 )

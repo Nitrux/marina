@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.21)
 
 project(marina VERSION 0.1.0 LANGUAGES C CXX)
 
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "/usr" CACHE PATH "Install path prefix" FORCE)
+endif()
+
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(FATAL_ERROR "Marina supports Linux builds only.")
 endif()
