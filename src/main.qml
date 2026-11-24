@@ -659,7 +659,7 @@ Window
                     flags: Qt.FramelessWindowHint | Qt.Popup
                     transientParent: root
                     title: i18n("%1 actions", launcher.name)
-                    Maui.Theme.colorSet: Maui.Theme.Window
+                    Maui.Theme.colorSet: Maui.Theme.View
                     Maui.Theme.inherit: false
 
                     function anchorPointInDock()
@@ -755,7 +755,7 @@ Window
                     {
                         anchors.fill: parent
                         color: contextMenu.Maui.Theme.backgroundColor
-                        border.color: contextMenu.Maui.Theme.alternateBackgroundColor
+                        border.color: Qt.alpha(contextMenu.Maui.Theme.textColor, 0.10)
                         border.width: 1
                         radius: Maui.Style.radiusV
                     }
