@@ -816,7 +816,7 @@ Window
                         {
                             width: parent.width
                             visible: launcher.running
-                            text: i18n("Close")
+                            text: i18n("Close Window")
                             icon.name: "window-close"
                             onTriggered:
                             {
