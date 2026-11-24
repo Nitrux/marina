@@ -801,6 +801,7 @@ Window
                         {
                             width: parent.width
                             visible: launcher.running
+                            enabled: dockModel.tilingEnabled
                             text: launcher.floating
                                   ? i18n("Tile Window")
                                   : i18n("Untile Window")

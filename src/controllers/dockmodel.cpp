@@ -355,6 +355,11 @@ bool DockModel::fullscreenActiveOnScreen(const QString &screenName) const
     return false;
 }
 
+bool DockModel::tilingEnabled() const
+{
+    return m_tilingEnabled;
+}
+
 bool DockModel::compositorAvailable() const
 {
     return m_compositorAvailable;
@@ -467,6 +472,10 @@ void DockModel::closeWindows(int row)
 
 void DockModel::toggleFloating(int row)
 {
+    reloadTilingSetting();
+    if (!m_tilingEnabled)
+        return;
+
     if (row < 0 || row >= m_entries.size() || m_hyprctlProgram.isEmpty())
         return;
 
@@ -737,8 +746,59 @@ void DockModel::scheduleSettingsReload()
     m_settingsReloadTimer.start();
 }
 
+void DockModel::reloadTilingSetting()
+{
+    const QString configDirectory = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);
+    const QString hyprDirectory = configDirectory + QStringLiteral("/hypr");
+    const QString configPath = hyprDirectory + QStringLiteral("/hyprland.lua");
+    for (const QString &directory : {configDirectory, hyprDirectory})
+    {
+        if (QDir(directory).exists() && !m_settingsWatcher.directories().contains(directory))
+            m_settingsWatcher.addPath(directory);
+    }
+    if (QFileInfo::exists(configPath) && !m_settingsWatcher.files().contains(configPath))
+        m_settingsWatcher.addPath(configPath);
+
+    bool enabled = true;
+    QFile file(configPath);
+    if (file.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        // Read only the rule managed by Maui Settings, without executing Lua.
+        const QString source = QString::fromUtf8(file.readAll());
+        static const QRegularExpression ruleExpression(
+            QStringLiteral("^\\s*hl\\.window_rule\\s*\\(\\s*\\{([\\s\\S]*?)^\\s*\\}\\s*\\)"),
+            QRegularExpression::MultilineOption);
+        static const QRegularExpression nameExpression(
+            QStringLiteral("^\\s*name\\s*=\\s*\"maui-settings-disable-tiling\"\\s*,?\\s*(?:--[^\\n]*)?$"),
+            QRegularExpression::MultilineOption);
+        static const QRegularExpression disabledExpression(
+            QStringLiteral("^\\s*enabled\\s*=\\s*false\\s*,?\\s*(?:--[^\\n]*)?$"),
+            QRegularExpression::MultilineOption);
+        auto rules = ruleExpression.globalMatch(source);
+        while (rules.hasNext())
+        {
+            const QString rule = rules.next().captured(1);
+            if (!nameExpression.match(rule).hasMatch())
+                continue;
+            enabled = disabledExpression.match(rule).hasMatch();
+            break;
+        }
+    }
+    else if (file.exists())
+    {
+        return;
+    }
+
+    if (m_tilingEnabled == enabled)
+        return;
+    m_tilingEnabled = enabled;
+    emit tilingEnabledChanged();
+}
+
 void DockModel::reloadSettings()
 {
+    reloadTilingSetting();
+
     if (!QFileInfo::exists(m_configFile))
         return;
 

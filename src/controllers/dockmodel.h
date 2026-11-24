@@ -30,6 +30,7 @@ class DockModel final : public QAbstractListModel
     Q_PROPERTY(bool launcherShortcutsEnabled READ launcherShortcutsEnabled NOTIFY launcherShortcutsEnabledChanged)
     Q_PROPERTY(bool showAboveFullscreen READ showAboveFullscreen NOTIFY showAboveFullscreenChanged)
     Q_PROPERTY(bool fullscreenActive READ fullscreenActive NOTIFY fullscreenActiveChanged)
+    Q_PROPERTY(bool tilingEnabled READ tilingEnabled NOTIFY tilingEnabledChanged)
     Q_PROPERTY(bool compositorAvailable READ compositorAvailable NOTIFY compositorAvailableChanged)
 
 public:
@@ -71,6 +72,7 @@ public:
     bool showAboveFullscreen() const;
     bool fullscreenActive() const;
     bool fullscreenActiveOnScreen(const QString &screenName) const;
+    bool tilingEnabled() const;
     bool compositorAvailable() const;
 
     Q_INVOKABLE void trigger(int row);
@@ -94,6 +96,7 @@ signals:
     void launcherModeDurationChanged();
     void launcherShortcutsEnabledChanged();
     void showAboveFullscreenChanged();
+    void tilingEnabledChanged();
     void compositorAvailableChanged();
     void fullscreenActiveChanged();
     void workspaceChanged();
@@ -136,6 +139,7 @@ private:
 
     void initializeSettings();
     void reloadSettings();
+    void reloadTilingSetting();
     void scheduleSettingsReload();
     void discoverDesktopEntries();
     void registerDesktopAlias(const QString &alias, const QString &desktopId);
@@ -183,6 +187,7 @@ private:
     bool m_launcherShortcutsEnabled = true;
     bool m_showAboveFullscreen = false;
     bool m_fullscreenActive = false;
+    bool m_tilingEnabled = true;
     bool m_compositorAvailable = false;
     bool m_clientsReady = false;
     bool m_monitorsReady = false;
