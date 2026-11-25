@@ -141,7 +141,7 @@ int main(int argc, char *argv[])
     application.setQuitOnLastWindowClosed(false);
     application.setApplicationName(QStringLiteral("marina"));
     application.setApplicationDisplayName(QStringLiteral("Marina"));
-    application.setApplicationVersion(QStringLiteral("0.1.0"));
+    application.setApplicationVersion(QStringLiteral("0.0.2"));
     application.setDesktopFileName(QStringLiteral("org.maui.marina"));
     application.setOrganizationName(QStringLiteral("Maui"));
     application.setOrganizationDomain(QStringLiteral("maui.org"));
@@ -177,7 +177,7 @@ int main(int argc, char *argv[])
     KAboutData aboutData(
         QStringLiteral("marina"),
         i18n("Marina"),
-        QStringLiteral("0.1.0"),
+        QStringLiteral("0.0.2"),
         i18n("Workspace dock for Nitrux built with MauiKit and LayerShell-Qt."),
         KAboutLicense::BSD_3_Clause,
         i18n("© %1 Nitrux Latinoamericana S.C.", QString::number(QDate::currentDate().year())));
